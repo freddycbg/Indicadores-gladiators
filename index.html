@@ -1,0 +1,278 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Seguimiento Diario · Gladiator's Team</title>
+<link rel="stylesheet" href="assets/css/styles.css">
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🛡️</text></svg>">
+</head>
+<body>
+
+<header class="cabecera">
+  <div class="cabecera-int">
+    <div class="marca">
+      <span class="marca-icono" aria-hidden="true">🛡️</span>
+      <div>
+        <h1>Seguimiento Diario</h1>
+        <p class="marca-sub" id="marcaEquipo">Gladiator's Team</p>
+      </div>
+    </div>
+    <div class="cabecera-acc">
+      <span class="pastilla" id="pastillaModo" hidden>Datos de prueba</span>
+      <button class="btn-icono" id="btnTema" type="button" title="Cambiar tema" aria-label="Cambiar tema">◐</button>
+    </div>
+  </div>
+
+  <nav class="pestanas" role="tablist" aria-label="Secciones">
+    <button class="pestana is-activa" role="tab" data-panel="panel-registro"     aria-selected="true">Registro</button>
+    <button class="pestana"           role="tab" data-panel="panel-estadisticas" aria-selected="false">Estadísticas y Reportes</button>
+    <button class="pestana"           role="tab" data-panel="panel-agentes"      aria-selected="false">Agentes</button>
+  </nav>
+</header>
+
+<div class="aviso" id="aviso" aria-live="polite"></div>
+
+<main class="envoltura">
+
+  <!-- ================= PANEL: REGISTRO ================= -->
+  <section class="panel is-activa" id="panel-registro" role="tabpanel">
+    <div class="tarjeta">
+      <div class="tarjeta-cab">
+        <h2>Nuevo registro diario</h2>
+        <p class="ayuda">Deja en blanco lo que no aplique — los campos vacíos se guardan como cero.</p>
+      </div>
+
+      <form id="formRegistro" novalidate>
+        <div class="rejilla-form">
+          <div class="campo">
+            <label for="f_fecha">Fecha <span class="req">*</span></label>
+            <input type="date" id="f_fecha" name="fecha" required>
+          </div>
+          <div class="campo">
+            <label for="f_agente">Agent Name <span class="req">*</span></label>
+            <select id="f_agente" name="agenteId" required>
+              <option value="">Selecciona un agente…</option>
+            </select>
+          </div>
+        </div>
+
+        <!-- Aparece cuando ya existe un registro para esa fecha y agente -->
+        <div class="nota" id="notaEdicion" hidden>
+          <span id="notaEdicionTexto"></span>
+          <button type="button" class="btn-mini" id="btnCancelarEdicion">Cancelar edición</button>
+        </div>
+
+        <hr class="separador">
+
+        <!-- Los campos de métricas se generan desde CAMPOS en config.js -->
+        <div class="rejilla-form" id="rejillaMetricas"></div>
+
+        <div class="acciones">
+          <button type="submit" class="btn btn-primario" id="btnGuardar">Guardar registro</button>
+          <button type="button" class="btn btn-suave" id="btnLimpiar">Limpiar</button>
+          <button type="button" class="btn btn-peligro-suave" id="btnEliminarRegistro" hidden>
+            Eliminar este registro
+          </button>
+        </div>
+      </form>
+    </div>
+
+    <div class="tarjeta">
+      <div class="tarjeta-cab">
+        <h2>Mis últimos registros</h2>
+        <p class="ayuda">Los 10 registros más recientes guardados en el sistema.</p>
+      </div>
+      <div class="tabla-scroll">
+        <table class="tabla" id="tablaRecientes"><tbody></tbody></table>
+      </div>
+    </div>
+  </section>
+
+  <!-- ================= PANEL: ESTADÍSTICAS Y REPORTES ================= -->
+  <section class="panel" id="panel-estadisticas" role="tabpanel">
+
+    <div class="filtros" id="filtrosStats">
+      <div class="campo campo--sm">
+        <label for="s_preset">Periodo</label>
+        <select id="s_preset">
+          <option value="7">Últimos 7 días</option>
+          <option value="30" selected>Últimos 30 días</option>
+          <option value="90">Últimos 90 días</option>
+          <option value="mes">Mes en curso</option>
+          <option value="custom">Personalizado</option>
+        </select>
+      </div>
+      <div class="campo campo--sm"><label for="s_desde">Desde</label><input type="date" id="s_desde"></div>
+      <div class="campo campo--sm"><label for="s_hasta">Hasta</label><input type="date" id="s_hasta"></div>
+      <div class="campo campo--sm">
+        <label for="s_agente">Agente</label>
+        <select id="s_agente"><option value="">Todos los agentes</option></select>
+      </div>
+      <div class="filtros-acc">
+        <button class="btn btn-suave" id="btnImprimir" type="button">Imprimir</button>
+        <button class="btn btn-suave" id="btnCSV" type="button">Exportar CSV</button>
+      </div>
+    </div>
+
+    <!-- Fila de indicadores -->
+    <div class="kpis" id="kpis"></div>
+
+    <div class="rejilla-graficas">
+      <div class="tarjeta">
+        <div class="tarjeta-cab">
+          <h2>Tendencia diaria</h2>
+          <p class="ayuda">Appointments, presentaciones y ventas por día en el periodo.</p>
+        </div>
+        <div class="lienzo" id="graficaTendencia"></div>
+      </div>
+
+      <div class="tarjeta">
+        <div class="tarjeta-cab">
+          <h2>ALP por agente</h2>
+          <p class="ayuda">Prima anual acumulada en el periodo, de mayor a menor.</p>
+        </div>
+        <div class="lienzo" id="graficaAlp"></div>
+      </div>
+
+      <div class="tarjeta">
+        <div class="tarjeta-cab">
+          <h2>Top agentes por PRESS SALE</h2>
+          <p class="ayuda">Ventas cerradas en el periodo.</p>
+        </div>
+        <div class="lienzo" id="graficaVentas"></div>
+      </div>
+
+      <div class="tarjeta">
+        <div class="tarjeta-cab">
+          <h2>Efectividad</h2>
+          <p class="ayuda">Tasas de conversión del equipo en el periodo.</p>
+        </div>
+        <div class="lienzo" id="tasas"></div>
+      </div>
+    </div>
+
+    <div class="tarjeta" id="bloqueReporte">
+      <div class="tarjeta-cab">
+        <h2>Reporte consolidado por agente</h2>
+        <p class="ayuda" id="reporteSub"></p>
+      </div>
+      <div class="tabla-scroll">
+        <table class="tabla" id="tablaReporte"></table>
+      </div>
+    </div>
+
+    <div class="tarjeta">
+      <div class="tarjeta-cab">
+        <h2>Detalle de registros</h2>
+        <p class="ayuda">Todos los registros individuales del periodo y agente seleccionados.</p>
+      </div>
+      <div class="tabla-scroll">
+        <table class="tabla" id="tablaDetalle"></table>
+      </div>
+    </div>
+  </section>
+
+  <!-- ================= PANEL: AGENTES (ADMIN) ================= -->
+  <section class="panel" id="panel-agentes" role="tabpanel">
+
+    <!-- Puerta de administrador -->
+    <div class="tarjeta tarjeta--angosta" id="puertaAdmin">
+      <div class="tarjeta-cab">
+        <h2>Acceso de administrador</h2>
+        <p class="ayuda">Solo un administrador puede crear, modificar o eliminar agentes.</p>
+      </div>
+      <form id="formAdmin">
+        <div class="campo">
+          <label for="a_pin">PIN de administrador</label>
+          <input type="password" id="a_pin" inputmode="numeric" autocomplete="current-password" placeholder="••••">
+        </div>
+        <div class="acciones">
+          <button type="submit" class="btn btn-primario">Entrar</button>
+        </div>
+        <p class="ayuda" id="pistaPin" hidden></p>
+      </form>
+    </div>
+
+    <!-- Administración -->
+    <div id="zonaAdmin" hidden>
+      <div class="tarjeta">
+        <div class="tarjeta-cab tarjeta-cab--fila">
+          <div>
+            <h2>Agentes</h2>
+            <p class="ayuda" id="conteoAgentes"></p>
+          </div>
+          <div class="tarjeta-acc">
+            <button class="btn btn-primario" id="btnNuevoAgente" type="button">+ Nuevo agente</button>
+            <button class="btn btn-suave" id="btnSalirAdmin" type="button">Salir</button>
+          </div>
+        </div>
+        <div class="tabla-scroll">
+          <table class="tabla" id="tablaAgentes"></table>
+        </div>
+      </div>
+
+      <div class="tarjeta" id="zonaPeligro">
+        <div class="tarjeta-cab">
+          <h2>Datos de prueba</h2>
+          <p class="ayuda">Restablece los agentes y registros de ejemplo a su estado original.</p>
+        </div>
+        <div class="acciones">
+          <button class="btn btn-peligro-suave" id="btnReiniciar" type="button">Reiniciar datos de prueba</button>
+        </div>
+      </div>
+    </div>
+  </section>
+
+</main>
+
+<!-- ================= DIÁLOGO: AGENTE ================= -->
+<dialog class="dialogo" id="dlgAgente">
+  <form method="dialog" id="formAgente">
+    <h3 id="dlgAgenteTitulo">Nuevo agente</h3>
+    <input type="hidden" id="ag_id">
+    <div class="campo">
+      <label for="ag_nombre">Nombre completo <span class="req">*</span></label>
+      <input type="text" id="ag_nombre" required autocomplete="off" placeholder="Ej. Carlos Méndez">
+    </div>
+    <div class="campo">
+      <label for="ag_equipo">Equipo</label>
+      <input type="text" id="ag_equipo" autocomplete="off" placeholder="Ej. Alfa">
+    </div>
+    <div class="campo campo--check">
+      <label><input type="checkbox" id="ag_activo" checked> Agente activo</label>
+      <p class="ayuda">Los agentes inactivos no aparecen en el formulario de registro.</p>
+    </div>
+    <div class="acciones acciones--fin">
+      <button type="button" class="btn btn-suave" data-cerrar>Cancelar</button>
+      <button type="submit" class="btn btn-primario">Guardar</button>
+    </div>
+  </form>
+</dialog>
+
+<!-- ================= DIÁLOGO: CONFIRMAR ================= -->
+<dialog class="dialogo" id="dlgConfirmar">
+  <form method="dialog">
+    <h3 id="confTitulo">¿Confirmar?</h3>
+    <p class="dialogo-texto" id="confTexto"></p>
+    <div class="campo campo--check" id="confExtraZona" hidden>
+      <label><input type="checkbox" id="conf_borrarRegs"> Eliminar también todos sus registros históricos</label>
+    </div>
+    <div class="acciones acciones--fin">
+      <button type="button" class="btn btn-suave" data-cerrar>Cancelar</button>
+      <button type="button" class="btn btn-peligro" id="confOk">Eliminar</button>
+    </div>
+  </form>
+</dialog>
+
+<footer class="pie">
+  <span id="pieModo"></span>
+</footer>
+
+<script src="assets/js/config.js"></script>
+<script src="assets/js/util.js"></script>
+<script src="assets/js/store.js"></script>
+<script src="assets/js/charts.js"></script>
+<script src="assets/js/app.js"></script>
+</body>
+</html>
