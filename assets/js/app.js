@@ -387,6 +387,8 @@ function pintarKPIs() {
   const regs = App.registrosStats;
   const dias = new Set(regs.map(r => r.fecha)).size || 1;
 
+  cont.appendChild(kpiAgentes(regs));
+
   for (const key of KPIS) {
     const campo = CAMPOS.find(c => c.key === key);
     const total = suma(regs, key);
@@ -396,6 +398,43 @@ function pintarKPIs() {
       el('div', { class: 'kpi-sub',  text: `${fmtPromedio(total / dias, campo.tipo)} por día` }),
     ]));
   }
+}
+
+/**
+ * Indicador de participación: cuántos agentes distintos alimentan realmente
+ * las cifras del periodo. Va primero porque es el contexto que les da sentido
+ * — 18 APP con 3 agentes reportando no significa lo mismo que 18 con 30.
+ */
+function kpiAgentes(regs) {
+  const contribuyentes = new Set(regs.map(r => r.agenteId)).size;
+  const activos = App.agentes.filter(a => a.activo !== false).length;
+
+  // Promedio de agentes que reportan en un día cualquiera del periodo.
+  const porDia = new Map();
+  regs.forEach(r => {
+    if (!porDia.has(r.fecha)) porDia.set(r.fecha, new Set());
+    porDia.get(r.fecha).add(r.agenteId);
+  });
+  const promedio = porDia.size
+    ? [...porDia.values()].reduce((t, s) => t + s.size, 0) / porDia.size
+    : 0;
+
+  const partes = [];
+  if (activos) partes.push(`de ${activos} activo(s)`);
+  if (porDia.size) partes.push(`${fmtPromedio(promedio, 'entero')} por día`);
+
+  const faltantes = Math.max(0, activos - contribuyentes);
+
+  return el('div', {
+    class: 'kpi kpi--contexto',
+    title: faltantes
+      ? `${faltantes} agente(s) activos no reportaron ni un solo día en este periodo.`
+      : 'Todos los agentes activos reportaron al menos un día en este periodo.',
+  }, [
+    el('div', { class: 'kpi-etq', text: 'Agentes' }),
+    el('div', { class: 'kpi-val', text: fmt(contribuyentes, 'entero') }),
+    el('div', { class: 'kpi-sub', text: partes.join(' · ') || 'sin reportes' }),
+  ]);
 }
 
 function pintarGraficas() {

@@ -1,0 +1,10 @@
+# Configuración local de herramientas
+.claude/settings.local.json
+
+# Sistema operativo
+Thumbs.db
+desktop.ini
+.DS_Store
+
+# Dependencias (por si más adelante se usan)
+node_modules/

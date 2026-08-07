@@ -1,0 +1,3 @@
+# Normalizar saltos de línea a LF en el repositorio.
+# Evita que subir desde Windows marque archivos enteros como modificados.
+* text=auto eol=lf

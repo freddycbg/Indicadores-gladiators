@@ -420,6 +420,13 @@ input:invalid:not(:placeholder-shown) { border-color: var(--critico); }
 }
 .kpi-sub { font-size: .78rem; color: var(--tinta-3); margin-top: 2px; }
 
+/* No es una métrica del reporte sino el contexto de participación:
+   se marca con un filo de acento para que no se lea como una más. */
+.kpi--contexto {
+  border-left: 3px solid var(--acento);
+  cursor: help;
+}
+
 /* ---------- Gráficas ---------------------------------------------------- */
 
 .rejilla-graficas {
