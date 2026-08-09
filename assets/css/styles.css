@@ -5,28 +5,50 @@
 
 /* ---------- Tokens ------------------------------------------------------ */
 
+/* -------------------------------------------------------------------------
+   Colores de marca, muestreados directamente del logo de Gladiator's Team.
+   El navy y el oro son los del emblema; no son aproximaciones.
+   ------------------------------------------------------------------------- */
+:root {
+  --navy-950:  #01091B;
+  --navy-900:  #000F28;
+  --navy-800:  #0A1730;
+  --navy-700:  #14243F;
+  --navy-600:  #1F3454;
+
+  --oro-claro: #FBD577;
+  --oro:       #F6C060;
+  --oro-medio: #D69642;
+  --oro-onda:  #BC7B31;
+  --bronce:    #794414;
+}
+
 :root {
   color-scheme: light;
 
-  --plano:        #f9f9f7;
-  --superficie:   #fcfcfb;
-  --superficie-2: #f2f2ee;
+  /* Fondos deliberadamente suaves: el peso visual lo carga el encabezado. */
+  --plano:        #f7f5f1;
+  --superficie:   #fffefc;
+  --superficie-2: #f3f0ea;
 
-  --tinta:        #0b0b0b;
-  --tinta-2:      #52514e;
-  --tinta-3:      #898781;
+  --tinta:        #10141c;
+  --tinta-2:      #4a5162;
+  --tinta-3:      #6b7280;   /* 4.9:1 sobre la tarjeta — texto de ayuda legible */
 
-  --borde:        rgba(11, 11, 11, 0.10);
-  --borde-fuerte: #c3c2b7;
-  --malla:        #e1e0d9;
+  --borde:        rgba(16, 20, 28, 0.10);
+  --borde-fuerte: #d9d4ca;   /* divisiones y filos: decorativo */
+  --borde-campo:  #8f8a7d;   /* contorno de inputs: 3:1, requisito WCAG 1.4.11 */
+  --malla:        #e6e2d9;
 
-  --acento:       #2a78d6;
-  --acento-alto:  #256abf;
-  --acento-lavado:#eef4fd;
+  /* Azul profundo emparentado con el navy del logo: sirve de acento sin
+     perder contraste, cosa que el oro no logra sobre fondo claro. */
+  --acento:       #1b3e70;
+  --acento-alto:  #122c52;
+  --acento-lavado:#eaf0f8;
 
   --bien:         #0ca30c;
-  --critico:      #d03b3b;
-  --critico-lav:  #fdeeee;
+  --critico:      #c0392f;
+  --critico-lav:  #fbeeec;
 
   --r-sm: 6px;
   --r-md: 10px;
@@ -37,54 +59,58 @@
   --fuente: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
 }
 
+/* El modo oscuro toma el navy del propio logo como plano de fondo. */
 @media (prefers-color-scheme: dark) {
   :root:not([data-theme="light"]) {
     color-scheme: dark;
 
-    --plano:        #0d0d0d;
-    --superficie:   #1a1a19;
-    --superficie-2: #232322;
+    --plano:        #060c17;
+    --superficie:   #0e1524;
+    --superficie-2: #172033;
 
-    --tinta:        #ffffff;
-    --tinta-2:      #c3c2b7;
-    --tinta-3:      #898781;
+    --tinta:        #f4f2ee;
+    --tinta-2:      #b6bcca;
+    --tinta-3:      #7e8595;
 
-    --borde:        rgba(255, 255, 255, 0.10);
-    --borde-fuerte: #383835;
-    --malla:        #2c2c2a;
+    --borde:        rgba(255, 255, 255, 0.09);
+    --borde-fuerte: #2a3448;
+    --malla:        #1c2537;
 
-    --acento:       #3987e5;
-    --acento-alto:  #5598e7;
-    --acento-lavado:#152436;
+    --acento:       #7aa9ea;
+    --acento-alto:  #9bc0f2;
+    --acento-lavado:#14243f;
 
-    --critico-lav:  #2e1a1a;
+    --critico:      #e46a5e;
+    --critico-lav:  #2c1714;
 
-    --sombra: 0 1px 2px rgba(0,0,0,.4), 0 4px 14px rgba(0,0,0,.3);
+    --sombra: 0 1px 2px rgba(0,0,0,.5), 0 4px 16px rgba(0,0,0,.4);
   }
 }
 
 :root[data-theme="dark"] {
   color-scheme: dark;
 
-  --plano:        #0d0d0d;
-  --superficie:   #1a1a19;
-  --superficie-2: #232322;
+  --plano:        #060c17;
+  --superficie:   #0e1524;
+  --superficie-2: #172033;
 
-  --tinta:        #ffffff;
-  --tinta-2:      #c3c2b7;
-  --tinta-3:      #898781;
+  --tinta:        #f4f2ee;
+  --tinta-2:      #b6bcca;
+  --tinta-3:      #7e8595;
 
-  --borde:        rgba(255, 255, 255, 0.10);
-  --borde-fuerte: #383835;
-  --malla:        #2c2c2a;
+  --borde:        rgba(255, 255, 255, 0.09);
+  --borde-fuerte: #2a3448;
+  --borde-campo:  #56637f;
+  --malla:        #1c2537;
 
-  --acento:       #3987e5;
-  --acento-alto:  #5598e7;
-  --acento-lavado:#152436;
+  --acento:       #7aa9ea;
+  --acento-alto:  #9bc0f2;
+  --acento-lavado:#14243f;
 
-  --critico-lav:  #2e1a1a;
+  --critico:      #e46a5e;
+  --critico-lav:  #2c1714;
 
-  --sombra: 0 1px 2px rgba(0,0,0,.4), 0 4px 14px rgba(0,0,0,.3);
+  --sombra: 0 1px 2px rgba(0,0,0,.5), 0 4px 16px rgba(0,0,0,.4);
 }
 
 /* ---------- Base -------------------------------------------------------- */
@@ -122,52 +148,88 @@ h3 { font-size: 1.05rem; }
 
 /* ---------- Cabecera ---------------------------------------------------- */
 
+/* El encabezado es navy en ambos modos: es el marco del emblema dorado y
+   el único bloque de color fuerte de la página. */
 .cabecera {
   position: sticky;
   top: 0;
   z-index: 40;
-  background: var(--superficie);
-  border-bottom: 1px solid var(--borde);
+  background:
+    radial-gradient(120% 180% at 12% 0%, var(--navy-700) 0%, transparent 60%),
+    linear-gradient(180deg, var(--navy-800) 0%, var(--navy-900) 100%);
+  border-bottom: 1px solid rgba(246, 192, 96, 0.22);
+  box-shadow: 0 1px 0 rgba(0,0,0,.35);
 }
 
 .cabecera-int {
   max-width: 1180px;
   margin: 0 auto;
-  padding: 14px 18px 10px;
+  padding: 12px 18px 8px;
   display: flex;
   align-items: center;
   justify-content: space-between;
   gap: 16px;
 }
 
-.marca { display: flex; align-items: center; gap: 12px; }
-.marca-icono { font-size: 1.6rem; line-height: 1; }
-.marca-sub { margin: 1px 0 0; font-size: .8rem; color: var(--tinta-3); }
+.marca { display: flex; align-items: center; gap: 13px; min-width: 0; }
+
+.marca-logo {
+  width: auto;
+  height: 46px;
+  display: block;
+  flex: none;
+  filter: drop-shadow(0 2px 6px rgba(0, 0, 0, .5));
+}
+
+.marca h1 {
+  color: #fff;
+  font-size: 1.12rem;
+  letter-spacing: .01em;
+}
+
+.marca-sub {
+  margin: 1px 0 0;
+  font-size: .78rem;
+  font-weight: 500;
+  letter-spacing: .06em;
+  text-transform: uppercase;
+  color: var(--oro);
+}
 
 .cabecera-acc { display: flex; align-items: center; gap: 10px; }
 
 .pastilla {
-  font-size: .72rem;
+  font-size: .7rem;
   font-weight: 600;
-  letter-spacing: .03em;
+  letter-spacing: .04em;
   text-transform: uppercase;
-  padding: 4px 9px;
+  padding: 4px 10px;
   border-radius: 999px;
-  background: var(--acento-lavado);
-  color: var(--acento-alto);
-  border: 1px solid var(--borde);
+  background: rgba(246, 192, 96, 0.12);
+  color: var(--oro);
+  border: 1px solid rgba(246, 192, 96, 0.35);
 }
 
 .btn-icono {
   width: 34px; height: 34px;
   border-radius: var(--r-sm);
-  border: 1px solid var(--borde);
-  background: var(--superficie);
-  color: var(--tinta-2);
+  border: 1px solid rgba(255, 255, 255, 0.18);
+  background: rgba(255, 255, 255, 0.06);
+  color: var(--oro);
   font-size: 1rem;
   cursor: pointer;
+  transition: background .12s, border-color .12s;
 }
-.btn-icono:hover { background: var(--superficie-2); }
+.btn-icono:hover {
+  background: rgba(246, 192, 96, 0.16);
+  border-color: rgba(246, 192, 96, 0.45);
+}
+
+@media (max-width: 560px) {
+  .marca-logo { height: 38px; }
+  .marca h1 { font-size: 1rem; }
+  .marca-sub { font-size: .7rem; }
+}
 
 /* ---------- Pestañas ---------------------------------------------------- */
 
@@ -190,16 +252,17 @@ h3 { font-size: 1.05rem; }
   font: inherit;
   font-size: .9rem;
   font-weight: 500;
-  color: var(--tinta-3);
+  color: rgba(255, 255, 255, 0.62);
   cursor: pointer;
   white-space: nowrap;
   border-bottom: 2px solid transparent;
   margin-bottom: -1px;
+  transition: color .12s;
 }
-.pestana:hover { color: var(--tinta); }
+.pestana:hover { color: #fff; }
 .pestana.is-activa {
-  color: var(--acento);
-  border-bottom-color: var(--acento);
+  color: var(--oro);
+  border-bottom-color: var(--oro);
   font-weight: 600;
 }
 
@@ -266,7 +329,7 @@ input[type="password"], select {
   font-size: .92rem;
   color: var(--tinta);
   background: var(--superficie);
-  border: 1px solid var(--borde-fuerte);
+  border: 1px solid var(--borde-campo);
   border-radius: var(--r-sm);
   transition: border-color .12s, box-shadow .12s;
 }
@@ -423,7 +486,7 @@ input:invalid:not(:placeholder-shown) { border-color: var(--critico); }
 /* No es una métrica del reporte sino el contexto de participación:
    se marca con un filo de acento para que no se lea como una más. */
 .kpi--contexto {
-  border-left: 3px solid var(--acento);
+  border-left: 3px solid var(--oro-medio);
   cursor: help;
 }
 
