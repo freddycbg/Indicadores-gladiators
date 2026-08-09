@@ -1,5 +1,5 @@
-# Configuración local de herramientas
-.claude/settings.local.json
+# Configuración local de herramientas (incluye sus temporales .tmp.NNNN)
+.claude/settings.local.json*
 
 # Sistema operativo
 Thumbs.db
