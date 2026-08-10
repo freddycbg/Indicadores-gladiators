@@ -1093,14 +1093,26 @@ function alcanceDe(id) {
   return new Set([id, ...Jerarquia.descendientes(App.agentes, id).map(a => a.id)]);
 }
 
-/** Agentes de campo dentro de la línea elegida (o todos si no hay línea). */
-function agentesDeLaLinea(lineaId) {
-  const base = lineaId
-    ? Jerarquia.descendientes(App.agentes, lineaId)
-    : App.agentes;
-  return base
-    .filter(a => a.rol === 'Agente' && a.activo !== false)
-    .sort((a, b) => a.nombre.localeCompare(b.nombre, 'es'));
+/**
+ * Personas de la línea elegida, en orden de organigrama y con su nivel
+ * relativo para poder sangrarlas.
+ *
+ * Incluye a los líderes, no solo a los agentes de campo: un SA, un GA o un
+ * MGA también produce y puede tener meta propia de ALP, citas y referidos.
+ */
+function personasDeLaLinea(lineaId) {
+  const alcance = alcanceDe(lineaId);
+
+  const dentro = Jerarquia.aplanar(App.agentes)
+    .filter(({ agente }) => agente.activo !== false)
+    .filter(({ agente }) => !alcance || alcance.has(agente.id));
+
+  if (!dentro.length) return [];
+
+  // El nivel viene del árbol completo; se normaliza para que la primera
+  // persona de la vista quede sin sangría.
+  const base = Math.min(...dentro.map(d => d.nivel));
+  return dentro.map(d => ({ agente: d.agente, nivel: d.nivel - base }));
 }
 
 async function refrescarMetas() {
@@ -1150,18 +1162,18 @@ function metaDe(agenteId) {
 function pintarTablaMetas(esAdmin) {
   const tabla = $('#tablaMetas');
   tabla.innerHTML = '';
-  const agentes = agentesDeLaLinea($('#m_linea').value);
+  const personas = personasDeLaLinea($('#m_linea').value);
 
-  if (!agentes.length) {
+  if (!personas.length) {
     tabla.appendChild(el('tbody', {}, [
-      el('tr', {}, [el('td', { class: 'vacio', text: 'No hay agentes activos en esa línea.' })]),
+      el('tr', {}, [el('td', { class: 'vacio', text: 'No hay personas activas en esa línea.' })]),
     ]));
     return;
   }
 
   tabla.appendChild(el('thead', {}, [
     el('tr', {}, [
-      el('th', { text: 'Agente' }),
+      el('th', { text: 'Persona' }),
       el('th', { text: 'Reporta a' }),
       ...METAS_CAMPOS.map(c => el('th', { class: 'num', text: 'Meta ' + c.corto })),
       ...METAS_CAMPOS.map(c => el('th', { class: 'num', text: 'Real ' + c.corto })),
@@ -1171,13 +1183,16 @@ function pintarTablaMetas(esAdmin) {
 
   const nombrePorId = Object.fromEntries(App.agentes.map(a => [a.id, a.nombre]));
 
-  tabla.appendChild(el('tbody', {}, agentes.map(ag => {
+  tabla.appendChild(el('tbody', {}, personas.map(({ agente: ag, nivel }) => {
     const meta = metaDe(ag.id);
     const real = App.realSemana.get(ag.id) || {};
     const editada = App.metasEditadas.has(ag.id);
 
     return el('tr', { class: editada ? 'fila-editada' : '' }, [
-      el('td', { text: ag.nombre }),
+      el('td', { style: `padding-left:${11 + nivel * 18}px` }, [
+        el('span', { class: 'marca-rol', text: ag.rol || 'Agente' }),
+        document.createTextNode(' ' + ag.nombre),
+      ]),
       el('td', { class: 'tenue', text: nombrePorId[ag.reportaA] || '—' }),
 
       ...METAS_CAMPOS.map(c => el('td', { class: 'num' }, [
@@ -1280,14 +1295,18 @@ function pintarResumenMetas() {
   ]));
 
   tabla.appendChild(el('tbody', {}, lineas.map(({ agente, nivel }) => {
-    const suyos = Jerarquia.descendientes(App.agentes, agente.id)
-      .filter(a => a.rol === 'Agente' && a.activo !== false);
+    // La suma incluye a la propia persona: si un SA tiene meta propia,
+    // cuenta dentro de su línea. Cada quien se suma una sola vez.
+    const enLinea = [agente, ...Jerarquia.descendientes(App.agentes, agente.id)]
+      .filter(a => a.activo !== false);
 
-    const conMeta = suyos.filter(a => metaDe(a.id));
+    const deCampo = enLinea.filter(a => a.rol === 'Agente');
+    const conMeta = deCampo.filter(a => metaDe(a.id));
+
     const sumaMeta = Object.fromEntries(METAS_CAMPOS.map(c => [c.key, 0]));
     const sumaReal = Object.fromEntries(METAS_CAMPOS.map(c => [c.key, 0]));
 
-    suyos.forEach(a => {
+    enLinea.forEach(a => {
       const m = metaDe(a.id);
       const r = App.realSemana.get(a.id) || {};
       METAS_CAMPOS.forEach(c => {
@@ -1296,6 +1315,7 @@ function pintarResumenMetas() {
       });
     });
 
+    const suyos = deCampo;
     const faltan = suyos.length - conMeta.length;
 
     return el('tr', {}, [
@@ -1355,7 +1375,7 @@ async function copiarMetasSemanaAnterior() {
     return aviso('La semana anterior no tiene metas cargadas.', 'error');
   }
 
-  const visibles = new Set(agentesDeLaLinea($('#m_linea').value).map(a => a.id));
+  const visibles = new Set(personasDeLaLinea($('#m_linea').value).map(p => p.agente.id));
   let copiadas = 0;
 
   anterior.forEach(m => {
@@ -1407,7 +1427,13 @@ const ETIQUETA_CONTEST = {
   finalizado: 'Finalizado', cancelado: 'Cancelado',
 };
 
-/** Agentes que participan, según el alcance declarado. */
+/**
+ * Quienes participan, según el alcance declarado. Incluye a los líderes:
+ * un SA o un GA también produce, así que su ALP cuenta para la meta de
+ * equipo y puede calificar para el premio como cualquiera.
+ *
+ * Para dejar a alguien fuera está el alcance "Personas seleccionadas".
+ */
 function participantesDe(c) {
   const activos = App.agentes.filter(a => a.activo !== false);
 
@@ -1417,50 +1443,108 @@ function participantesDe(c) {
   }
   if (c.alcanceTipo === 'linea' && c.alcanceLinea) {
     const alcance = alcanceDe(c.alcanceLinea);
-    return activos.filter(a => alcance.has(a.id) && a.rol === 'Agente');
+    return activos.filter(a => alcance.has(a.id));
   }
-  return activos.filter(a => a.rol === 'Agente');
+  return activos;
+}
+
+const esRequisitoDeEquipo = req => (req.ambito || 'individual') === 'equipo';
+
+/** Suma un campo sobre un conjunto de registros ya acotado. */
+function sumaEnRango(registros, campo) {
+  return registros.reduce((t, r) => t + (Number(r[campo]) || 0), 0);
+}
+
+function detalleRequisito(req, real) {
+  const meta = Number(req.meta) || 0;
+  return {
+    campo: CAMPOS.find(x => x.key === req.campo),
+    real, meta,
+    ratio: meta > 0 ? real / meta : 1,
+    cumplido: meta > 0 ? real >= meta : true,
+  };
 }
 
 /**
- * Avance de un agente. Con "todos" el avance honesto es el requisito peor
- * parado, porque hasta que ese no se cumpla no hay premio; con "alguno",
- * el mejor.
+ * Requisitos de equipo: se miden sobre la suma de todo el alcance y
+ * funcionan como puerta. Si el equipo no llega, nadie califica por bueno
+ * que sea su numero individual.
  */
-function progresoDe(c, agenteId, registros) {
+function progresoEquipo(c, registros) {
+  const ids = new Set(participantesDe(c).map(a => a.id));
+  const delEquipo = registros.filter(
+    r => ids.has(r.agenteId) && r.fecha >= c.desde && r.fecha <= c.hasta);
+
+  const detalles = (c.requisitos || [])
+    .filter(esRequisitoDeEquipo)
+    .map(req => detalleRequisito(req, sumaEnRango(delEquipo, req.campo)));
+
+  return {
+    detalles,
+    hay: detalles.length > 0,
+    cumplido: detalles.every(d => d.cumplido),   // vacío ⇒ true
+  };
+}
+
+/**
+ * Avance de un agente en los requisitos individuales. Con "todos" el
+ * avance honesto es el requisito peor parado, porque hasta que ese no se
+ * cumpla no hay premio; con "alguno", el mejor.
+ *
+ * `equipo` es el resultado de las puertas colectivas: se exige siempre,
+ * al margen de la forma de combinar los individuales.
+ */
+function progresoDe(c, agenteId, registros, equipo = { hay: false, cumplido: true }) {
   const suyos = registros.filter(
     r => r.agenteId === agenteId && r.fecha >= c.desde && r.fecha <= c.hasta);
 
-  const detalles = (c.requisitos || []).map(req => {
-    const campo = CAMPOS.find(x => x.key === req.campo);
-    const real = suyos.reduce((t, r) => t + (Number(r[req.campo]) || 0), 0);
-    const meta = Number(req.meta) || 0;
-    return {
-      campo, real, meta,
-      ratio: meta > 0 ? real / meta : 1,
-      cumplido: meta > 0 ? real >= meta : true,
-    };
-  });
+  const detalles = (c.requisitos || [])
+    .filter(req => !esRequisitoDeEquipo(req))
+    .map(req => detalleRequisito(req, sumaEnRango(suyos, req.campo)));
 
-  if (!detalles.length) return { ratio: 0, cumplido: false, detalles };
+  if (!detalles.length) {
+    // Solo hay requisitos de equipo: el individual califica con la puerta.
+    return {
+      ratio: equipo.cumplido ? 1 : 0,
+      cumplido: equipo.hay && equipo.cumplido,
+      detalles,
+      frenadoPorEquipo: false,
+    };
+  }
 
   const ratios = detalles.map(d => Math.min(d.ratio, 1));
   const ratio = c.combinacion === 'alguno' ? Math.max(...ratios) : Math.min(...ratios);
-  const cumplido = c.combinacion === 'alguno'
+  const propio = c.combinacion === 'alguno'
     ? detalles.some(d => d.cumplido)
     : detalles.every(d => d.cumplido);
 
-  return { ratio, cumplido, detalles };
+  return {
+    ratio,
+    cumplido: propio && equipo.cumplido,
+    detalles,
+    // Hizo su parte pero el equipo no llegó: conviene decirlo, no marcarlo
+    // como si hubiera fallado él.
+    frenadoPorEquipo: propio && !equipo.cumplido,
+  };
 }
 
-/** "ALP ≥ 12,000.00 y Ventas ≥ 8" */
+/** "Equipo ALP ≥ 40,000.00 · cada uno ALP ≥ 2,000.00" */
 function textoRequisitos(c) {
   if (!c.requisitos || !c.requisitos.length) return 'Sin requisitos definidos';
-  const union = c.combinacion === 'alguno' ? ' o ' : ' y ';
-  return c.requisitos.map(r => {
+
+  const texto = r => {
     const campo = CAMPOS.find(x => x.key === r.campo);
     return `${campo ? campo.corto : r.campo} ≥ ${fmt(r.meta, campo ? campo.tipo : 'entero')}`;
-  }).join(union);
+  };
+
+  const equipo = c.requisitos.filter(esRequisitoDeEquipo);
+  const propios = c.requisitos.filter(r => !esRequisitoDeEquipo(r));
+  const union = c.combinacion === 'alguno' ? ' o ' : ' y ';
+
+  const partes = [];
+  if (equipo.length)  partes.push(`Equipo: ${equipo.map(texto).join(' y ')}`);
+  if (propios.length) partes.push(`Cada uno: ${propios.map(texto).join(union)}`);
+  return partes.join(' · ');
 }
 
 async function refrescarContests() {
@@ -1505,9 +1589,10 @@ function tarjetaContest(c, registros, esAdmin) {
   const estado = estadoDeContest(c);
   const tipo = PREMIO_TIPOS.find(p => p.key === c.premioTipo) || PREMIO_TIPOS[3];
   const participantes = participantesDe(c);
+  const equipo = progresoEquipo(c, registros);
 
   const avances = participantes
-    .map(a => ({ agente: a, ...progresoDe(c, a.id, registros) }))
+    .map(a => ({ agente: a, ...progresoDe(c, a.id, registros, equipo) }))
     .sort((x, y) => (y.cumplido - x.cumplido) || (y.ratio - x.ratio));
 
   const cumplieron = avances.filter(a => a.cumplido).length;
@@ -1534,6 +1619,38 @@ function tarjetaContest(c, registros, esAdmin) {
     }),
   ]);
 
+  const bloqueEquipo = equipo.hay ? el('div', {
+    class: 'meta-equipo' + (equipo.cumplido ? ' meta-equipo--ok' : ''),
+  }, [
+    el('div', { class: 'meta-equipo-cab' }, [
+      el('span', { class: 'meta-equipo-etq', text: 'Meta de equipo' }),
+      el('span', {
+        class: 'meta-equipo-estado' + (equipo.cumplido ? ' meta-equipo-estado--ok' : ''),
+        text: equipo.cumplido ? '✓ Alcanzada' : 'Pendiente',
+      }),
+    ]),
+    ...equipo.detalles.map(d => el('div', { class: 'meta-equipo-req' }, [
+      el('span', { class: 'barra' }, [
+        el('span', {
+          class: 'barra-relleno' + (d.cumplido ? ' barra-relleno--ok' : ''),
+          style: `width:${Math.max(2, Math.round(Math.min(d.ratio, 1) * 100))}%`,
+        }),
+      ]),
+      el('span', {
+        class: 'meta-equipo-cifra',
+        text: `${d.campo ? d.campo.corto : '?'} ` +
+              `${fmt(d.real, d.campo ? d.campo.tipo : 'entero')} / ` +
+              `${fmt(d.meta, d.campo ? d.campo.tipo : 'entero')}`,
+      }),
+    ])),
+    el('p', {
+      class: 'ayuda',
+      text: equipo.cumplido
+        ? 'Alcanzada: ahora califica quien cumpla su parte.'
+        : 'Mientras el equipo no llegue, nadie califica aunque cumpla lo suyo.',
+    }),
+  ]) : null;
+
   const listaAvance = el('div', { class: 'contest-lista' },
     avances.length
       ? avances.map(a => filaAvance(a, c))
@@ -1548,7 +1665,7 @@ function tarjetaContest(c, registros, esAdmin) {
     el('span', { class: 'contest-acc' }, [
       el('button', {
         class: 'btn-mini', type: 'button', text: 'Exportar CSV',
-        onclick: () => exportarContestCSV(c, avances),
+        onclick: () => exportarContestCSV(c, avances, equipo),
       }),
       esAdmin ? el('button', {
         class: 'btn-mini', type: 'button', text: 'Editar',
@@ -1562,11 +1679,15 @@ function tarjetaContest(c, registros, esAdmin) {
   ]);
 
   return el('article', { class: `tarjeta contest contest--${estado}` },
-    [encabezado, meta, listaAvance, pie]);
+    [encabezado, meta, bloqueEquipo, listaAvance, pie].filter(Boolean));
 }
 
-function filaAvance({ agente, ratio, cumplido, detalles }, c) {
+function filaAvance({ agente, ratio, cumplido, detalles, frenadoPorEquipo }, c) {
   const pct = Math.round(ratio * 100);
+
+  const estado = cumplido ? '✓ Cumplido'
+    : frenadoPorEquipo ? 'Falta el equipo'
+    : `${pct}%`;
 
   return el('div', { class: 'avance' }, [
     el('span', { class: 'avance-nombre', text: agente.nombre }),
@@ -1580,13 +1701,17 @@ function filaAvance({ agente, ratio, cumplido, detalles }, c) {
     ]),
     el('span', {
       class: 'avance-detalle',
-      text: detalles.map(d =>
-        `${d.campo ? d.campo.corto : '?'} ${fmt(d.real, d.campo ? d.campo.tipo : 'entero')}/${fmt(d.meta, d.campo ? d.campo.tipo : 'entero')}`
-      ).join(' · '),
+      text: detalles.length
+        ? detalles.map(d =>
+            `${d.campo ? d.campo.corto : '?'} ${fmt(d.real, d.campo ? d.campo.tipo : 'entero')}/${fmt(d.meta, d.campo ? d.campo.tipo : 'entero')}`
+          ).join(' · ')
+        : 'Sin requisito individual: depende solo de la meta de equipo',
     }),
     el('span', {
-      class: 'avance-estado ' + (cumplido ? 'avance-estado--ok' : ''),
-      text: cumplido ? '✓ Cumplido' : `${pct}%`,
+      class: 'avance-estado' + (cumplido ? ' avance-estado--ok' : '') +
+             (frenadoPorEquipo ? ' avance-estado--espera' : ''),
+      title: frenadoPorEquipo ? 'Cumplió su parte, pero el equipo no ha llegado a su meta.' : '',
+      text: estado,
     }),
   ]);
 }
@@ -1600,17 +1725,24 @@ function textoAlcance(c) {
   return 'todo el equipo';
 }
 
-function exportarContestCSV(c, avances) {
+function exportarContestCSV(c, avances, equipo) {
   const cab = ['Contest', 'Desde', 'Hasta', 'Agente', 'Cumplió', 'Avance %'];
-  (c.requisitos || []).forEach(r => {
+  (c.requisitos || []).filter(r => !esRequisitoDeEquipo(r)).forEach(r => {
     const campo = CAMPOS.find(x => x.key === r.campo);
     cab.push(`${campo ? campo.corto : r.campo} real`, `${campo ? campo.corto : r.campo} meta`);
+  });
+  // Las cifras de equipo son las mismas en todas las filas, pero repetirlas
+  // permite leer el archivo sin volver a la aplicación.
+  (equipo && equipo.detalles || []).forEach(d => {
+    cab.push(`Equipo ${d.campo ? d.campo.corto : '?'} real`,
+             `Equipo ${d.campo ? d.campo.corto : '?'} meta`);
   });
 
   const filas = avances.map(a => {
     const fila = [c.nombre, c.desde, c.hasta, a.agente.nombre,
                   a.cumplido ? 'Sí' : 'No', Math.round(a.ratio * 100)];
     a.detalles.forEach(d => fila.push(d.real, d.meta));
+    (equipo && equipo.detalles || []).forEach(d => fila.push(d.real, d.meta));
     return fila;
   });
 
@@ -1638,7 +1770,13 @@ function agregarFilaRequisito(req = null) {
   CAMPOS.forEach(c => selCampo.appendChild(el('option', { value: c.key, text: c.label })));
   if (req) selCampo.value = req.campo;
 
+  const selAmbito = el('select', { class: 'req-ambito' });
+  AMBITO_REQUISITO.forEach(a =>
+    selAmbito.appendChild(el('option', { value: a.key, text: a.label })));
+  selAmbito.value = req ? (req.ambito || 'individual') : 'individual';
+
   const fila = el('div', { class: 'req-fila' }, [
+    selAmbito,
     selCampo,
     el('input', {
       type: 'number', class: 'req-meta', min: '0', step: 'any',
@@ -1652,13 +1790,20 @@ function agregarFilaRequisito(req = null) {
     }),
   ]);
 
+  selAmbito.addEventListener('change', actualizarZonaCombinacion);
   cont.appendChild(fila);
   actualizarZonaCombinacion();
 }
 
-/** La forma de combinar solo tiene sentido con más de un requisito. */
+/**
+ * La forma de combinar solo aplica a los requisitos individuales, y solo
+ * tiene sentido cuando hay más de uno: las puertas de equipo se exigen
+ * siempre.
+ */
 function actualizarZonaCombinacion() {
-  $('#ct_combinacionZona').hidden = $$('#ct_requisitos .req-fila').length < 2;
+  const individuales = $$('#ct_requisitos .req-fila')
+    .filter(f => f.querySelector('.req-ambito').value !== 'equipo').length;
+  $('#ct_combinacionZona').hidden = individuales < 2;
 }
 
 function abrirDlgContest(c) {
@@ -1692,13 +1837,13 @@ function abrirDlgContest(c) {
   const zona = $('#ct_alcanceIds');
   zona.innerHTML = '';
   const elegidos = new Set(c ? (c.alcanceIds || []) : []);
-  App.agentes
-    .filter(a => a.rol === 'Agente' && a.activo !== false)
-    .sort((a, b) => a.nombre.localeCompare(b.nombre, 'es'))
-    .forEach(a => {
+  Jerarquia.aplanar(App.agentes)
+    .filter(({ agente }) => agente.activo !== false)
+    .forEach(({ agente }) => {
       zona.appendChild(el('label', { class: 'check-item' }, [
-        el('input', { type: 'checkbox', value: a.id, checked: elegidos.has(a.id) }),
-        document.createTextNode(' ' + a.nombre),
+        el('input', { type: 'checkbox', value: agente.id, checked: elegidos.has(agente.id) }),
+        el('span', { class: 'marca-rol', text: agente.rol || 'Agente' }),
+        document.createTextNode(' ' + agente.nombre),
       ]));
     });
 
@@ -1716,6 +1861,7 @@ async function guardarContestDesdeForm(e) {
     .map(f => ({
       campo: f.querySelector('.req-campo').value,
       meta: nDecimal(f.querySelector('.req-meta').value),
+      ambito: f.querySelector('.req-ambito').value,
     }))
     .filter(r => r.meta > 0);
 

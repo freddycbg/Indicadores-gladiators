@@ -158,6 +158,19 @@ const PREMIO_TIPOS = [
   { key: 'otro',        label: 'Otro',        icono: '🏆' },
 ];
 
+/**
+ * Ambito de cada requisito.
+ *   individual → lo mide cada participante por separado
+ *   equipo     → se mide la suma de todo el alcance, y funciona como
+ *                puerta: si el equipo no llega, nadie califica
+ * Las puertas de equipo se exigen siempre; la forma de combinar
+ * (todos / al menos uno) se aplica solo entre los requisitos individuales.
+ */
+const AMBITO_REQUISITO = [
+  { key: 'individual', label: 'Por agente' },
+  { key: 'equipo',     label: 'De todo el equipo' },
+];
+
 const ALCANCE_TIPOS = [
   { key: 'todos',     label: 'Todo el equipo' },
   { key: 'linea',     label: 'Solo la línea de…' },

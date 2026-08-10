@@ -886,7 +886,61 @@ input:invalid:not(:placeholder-shown) { border-color: var(--critico); }
 .contest-req  { font-weight: 600; }
 .contest-dias { color: var(--tinta-3); white-space: nowrap; }
 
+/* Puerta de equipo: se separa del listado porque no es de nadie en
+   concreto, condiciona a todos. */
+.meta-equipo {
+  border: 1px solid var(--borde-fuerte);
+  border-left: 3px solid var(--acento);
+  border-radius: var(--r-sm);
+  padding: 10px 12px;
+  margin-bottom: 12px;
+  background: var(--acento-lavado);
+}
+.meta-equipo--ok {
+  border-left-color: var(--bien);
+  background: rgba(12, 163, 12, .07);
+}
+
+.meta-equipo-cab {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  margin-bottom: 8px;
+}
+.meta-equipo-etq {
+  font-size: .72rem;
+  font-weight: 700;
+  letter-spacing: .05em;
+  text-transform: uppercase;
+  color: var(--tinta-2);
+}
+.meta-equipo-estado {
+  font-size: .76rem;
+  font-weight: 700;
+  color: var(--tinta-3);
+  white-space: nowrap;
+}
+.meta-equipo-estado--ok { color: var(--bien); }
+
+.meta-equipo-req {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  align-items: center;
+  gap: 4px 10px;
+  margin-bottom: 6px;
+}
+.meta-equipo-cifra {
+  font-size: .78rem;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+.meta-equipo .ayuda { margin: 6px 0 0; font-size: .76rem; }
+
 .contest-lista { display: flex; flex-direction: column; }
+
+.avance-estado--espera { color: var(--acento); font-size: .76rem; }
 
 .avance {
   display: grid;
@@ -944,8 +998,14 @@ input:invalid:not(:placeholder-shown) { border-color: var(--critico); }
   align-items: center;
   margin-bottom: 8px;
 }
-.req-fila .req-campo { flex: 1; min-width: 0; }
-.req-fila .req-meta  { width: 110px; flex: none; }
+.req-fila .req-ambito { width: 150px; flex: none; }
+.req-fila .req-campo  { flex: 1; min-width: 0; }
+.req-fila .req-meta   { width: 110px; flex: none; }
+
+@media (max-width: 560px) {
+  .req-fila { flex-wrap: wrap; }
+  .req-fila .req-ambito { width: 100%; }
+}
 
 .lista-check {
   max-height: 190px;

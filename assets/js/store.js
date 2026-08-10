@@ -128,7 +128,7 @@ const Store = (() => {
      nuevos, jerarquia distinta). Sin esto, un navegador que ya tenia la
      semilla vieja nunca recibia la nueva y quedaba con datos incoherentes
      respecto del codigo. Solo afecta al modo demo. */
-  const SEMILLA_VERSION = '3-jerarquia-y-metas';
+  const SEMILLA_VERSION = '4-metas-de-lider-y-contest-de-equipo';
 
   function leerLS(clave, porDefecto) {
     try {
@@ -203,12 +203,13 @@ const Store = (() => {
       const diaSemana = new Date(fecha.replace(/-/g, '/')).getDay();
       if (diaSemana === 0) continue;                     // sin registros el domingo
 
-      // Solo los agentes de campo cargan reporte diario; SA/GA/MGA reciben
-      // el rollup de su linea.
-      for (const ag of agentes.filter(a => a.rol === 'Agente')) {
-        if (rnd() < 0.12) continue;                      // ausencias ocasionales
+      // Los lideres tambien producen, con menor volumen porque dedican
+      // parte del tiempo a su equipo. El MGA no carga reporte propio.
+      for (const ag of agentes.filter(a => a.rol !== 'MGA')) {
+        const esLider = ag.rol !== 'Agente';
+        if (rnd() < (esLider ? 0.35 : 0.12)) continue;   // ausencias ocasionales
 
-        const app       = entre(2, 9);
+        const app       = esLider ? entre(1, 4) : entre(2, 9);
         const press     = Math.max(0, app - entre(0, 3));
         const pressSale = Math.max(0, press - entre(0, press));
         registros.push({
@@ -233,20 +234,23 @@ const Store = (() => {
     /* Metas de las ultimas 6 semanas. Se dejan dos agentes sin meta a
        proposito, para poder probar el caso "sin meta". */
     const metas = [];
-    const sinMeta = new Set(['a17', 'a19']);
-    const deCampo = agentes.filter(a => a.rol === 'Agente' && !sinMeta.has(a.id));
+    const sinMeta = new Set(['a17', 'a19', 'a1']);   // a1 es el MGA: sin meta propia
+    // Los lideres tambien producen y llevan meta propia, mas baja porque
+    // dedican parte del tiempo a su equipo.
+    const conMeta = agentes.filter(a => !sinMeta.has(a.id));
 
     for (let s = 5; s >= 0; s--) {
       const semana = sumarDias(semanaActual(), -7 * s);
-      for (const ag of deCampo) {
+      for (const ag of conMeta) {
+        const esLider = ag.rol !== 'Agente';
         metas.push({
           id: nuevoId(),
           semana,
           agenteId: ag.id,
           agenteNombre: ag.nombre,
-          alp:       entre(6, 14) * 1000,
-          app:       entre(18, 30),
-          referidos: entre(8, 18),
+          alp:       (esLider ? entre(3, 7) : entre(6, 14)) * 1000,
+          app:       esLider ? entre(8, 15) : entre(18, 30),
+          referidos: esLider ? entre(4, 9)  : entre(8, 18),
           actualizado: semana,
         });
       }
@@ -279,6 +283,25 @@ const Store = (() => {
         combinacion: 'todos',
         alcanceTipo: 'linea',
         alcanceLinea: 'a2',                  // linea del GA
+        alcanceIds: [],
+        estatus: 'auto',
+      },
+      {
+        // Puerta de equipo + requisito individual: nadie califica hasta
+        // que la linea completa llegue a su numero.
+        id: 'c5',
+        nombre: 'Meta de Equipo MGA',
+        desde: sumarDias(hoyISO(), -10),
+        hasta: sumarDias(hoyISO(), 11),
+        premioTipo: 'efectivo',
+        premio: '$500 para cada uno que califique',
+        requisitos: [
+          { campo: 'alp', meta: 40000, ambito: 'equipo' },
+          { campo: 'alp', meta: 2000,  ambito: 'individual' },
+        ],
+        combinacion: 'todos',
+        alcanceTipo: 'linea',
+        alcanceLinea: 'a1',                  // toda la linea del MGA
         alcanceIds: [],
         estatus: 'auto',
       },
