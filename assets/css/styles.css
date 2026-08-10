@@ -654,6 +654,86 @@ input:invalid:not(:placeholder-shown) { border-color: var(--critico); }
 .marca-estado--on  { background: var(--acento-lavado); color: var(--acento-alto); }
 .marca-estado--off { background: var(--superficie-2);  color: var(--tinta-3); }
 
+/* ---------- Salud del equipo (semáforo) ---------------------------------- */
+
+/* El color nunca carga solo el significado: cada fila lleva ademas el
+   texto del estado y el porcentaje. */
+.salud-fila {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  width: 100%;
+  text-align: left;
+  font: inherit;
+  color: var(--tinta);
+  background: none;
+  border: 0;
+  border-bottom: 1px solid var(--borde);
+  border-left: 3px solid transparent;
+  padding: 11px 10px 11px calc(10px + var(--nivel) * 22px);
+  cursor: pointer;
+  transition: background .12s;
+}
+.salud-fila:last-child { border-bottom: 0; }
+.salud-fila:hover  { background: var(--superficie-2); }
+.salud-fila:focus-visible {
+  outline: 2px solid var(--acento);
+  outline-offset: -2px;
+}
+
+.salud-fila--verde    { border-left-color: var(--bien); }
+.salud-fila--amarillo { border-left-color: #d99a1a; }
+.salud-fila--rojo     { border-left-color: var(--critico); }
+.salud-fila--sin      { border-left-color: var(--borde-fuerte); }
+
+.punto {
+  width: 11px; height: 11px;
+  border-radius: 50%;
+  flex: none;
+}
+.punto--verde    { background: var(--bien); }
+.punto--amarillo { background: #d99a1a; }
+.punto--rojo     { background: var(--critico); }
+.punto--sin      { background: var(--tinta-3); }
+
+.salud-nombre {
+  font-weight: 500;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  min-width: 0;
+}
+
+.salud-detalle {
+  color: var(--tinta-3);
+  font-size: .82rem;
+  flex: 1;
+  min-width: 0;
+}
+
+.salud-estado {
+  font-size: .8rem;
+  font-weight: 700;
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+  padding: 3px 9px;
+  border-radius: 999px;
+}
+.salud-estado--verde    { color: var(--bien);    background: rgba(12, 163, 12, .10); }
+.salud-estado--amarillo { color: #a9740c;        background: rgba(217, 154, 26, .14); }
+.salud-estado--rojo     { color: var(--critico); background: var(--critico-lav); }
+.salud-estado--sin      { color: var(--tinta-3); background: var(--superficie-2); }
+
+@media (max-width: 620px) {
+  .salud-fila { flex-wrap: wrap; gap: 6px 9px; }
+  /* flex:1 de arriba fija flex-basis:0; hay que reponer los tres valores
+     o la celda colapsa a cero de ancho y el texto se parte letra a letra. */
+  .salud-detalle { order: 3; flex: 0 0 100%; }
+  .salud-nombre { flex: 1; }
+  .salud-estado { flex: none; }
+  .marca-rol { min-width: 0; }
+}
+
 /* ---------- Comparativa semanal ----------------------------------------- */
 
 /* Las tasas derivadas no se capturan: se separan visualmente de los

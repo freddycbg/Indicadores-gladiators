@@ -369,6 +369,7 @@ async function refrescarResumen() {
   const regs = await Store.listarRegistros({ desde: rango.desde, hasta: rango.hasta });
   App.registrosStats = alcance ? regs.filter(r => alcance.has(r.agenteId)) : regs;
 
+  await refrescarSalud($('#rs_linea').value);
   pintarKPIs();
   pintarGraficas();
   pintarTasas();
@@ -700,6 +701,179 @@ function exportarCSV() {
    al margen del rango elegido arriba: comparar "los ultimos 30 dias contra
    la semana pasada" no querria decir nada.
    ========================================================================= */
+
+/* =========================================================================
+   SALUD DEL EQUIPO (SEMÁFORO)
+   Se calcula sobre el cumplimiento de la meta de la semana en curso.
+   Un equipo NO se pinta con el peor de sus agentes: se promedian los % de
+   quienes tienen meta, para que un solo agente flojo no tina a los demas.
+   Quien no tiene meta no cuenta como 0%; queda fuera y se lista aparte.
+   ========================================================================= */
+
+/** verde | amarillo | rojo | sin  (null = sin base para evaluar) */
+function colorSemaforo(pct) {
+  if (pct === null || pct === undefined) return 'sin';
+  if (pct >= SEMAFORO.verde)    return 'verde';
+  if (pct >= SEMAFORO.amarillo) return 'amarillo';
+  return 'rojo';
+}
+
+const ETIQUETA_SEMAFORO = {
+  verde:    'En meta',
+  amarillo: 'Cerca',
+  rojo:     'Bajo',
+  sin:      'Sin meta',
+};
+
+/**
+ * Salud de una persona. Para un agente es su propio cumplimiento; para
+ * quien encabeza una linea, el promedio de los cumplimientos individuales
+ * de los suyos.
+ */
+function saludDe(persona, metaPorAgente, realPorAgente) {
+  const enAlcance = [persona, ...Jerarquia.descendientes(App.agentes, persona.id)]
+    .filter(a => a.activo !== false);
+
+  const evaluables = [];
+  const sinMeta = [];
+
+  enAlcance.forEach(a => {
+    const meta = metaPorAgente.get(a.id);
+    const pct = cumplimientoPromedio(meta, realPorAgente.get(a.id));
+    if (pct === null) {
+      // Solo se reclama meta a quien produce: un GA sin meta propia no es
+      // un hueco que llenar.
+      if (a.rol === 'Agente') sinMeta.push(a);
+    } else {
+      evaluables.push({ agente: a, pct });
+    }
+  });
+
+  const pct = evaluables.length
+    ? evaluables.reduce((t, e) => t + e.pct, 0) / evaluables.length
+    : null;
+
+  return {
+    pct,
+    color: colorSemaforo(pct),
+    conMeta: evaluables.length,
+    enMeta: evaluables.filter(e => e.pct >= SEMAFORO.verde).length,
+    bajos: evaluables.filter(e => e.pct < SEMAFORO.amarillo).length,
+    sinMeta,
+    esAgente: persona.rol === 'Agente',
+  };
+}
+
+/** Filas a mostrar según lo que esté seleccionado en "Ver". */
+function filasDeSalud(lineaId) {
+  if (!lineaId) {
+    // Vista general: todas las lineas del organigrama, sangradas.
+    return Jerarquia.aplanar(App.agentes)
+      .filter(({ agente }) => agente.rol !== 'Agente' && agente.activo !== false);
+  }
+
+  const persona = App.agentes.find(a => a.id === lineaId);
+  if (!persona) return [];
+  if (persona.rol === 'Agente') return [{ agente: persona, nivel: 0 }];
+
+  // Una linea concreta: quienes le reportan directo, lideres y agentes.
+  return Jerarquia.hijos(App.agentes, lineaId)
+    .filter(a => a.activo !== false)
+    .sort((a, b) => (rangoDeRol(b.rol) - rangoDeRol(a.rol)) ||
+                    a.nombre.localeCompare(b.nombre, 'es'))
+    .map(agente => ({ agente, nivel: 0 }));
+}
+
+async function refrescarSalud(lineaId) {
+  const semana = semanaActual();
+
+  const [metas, registros] = await Promise.all([
+    Store.listarMetas({ semana }),
+    Store.listarRegistros({ desde: semana, hasta: domingoDeLaSemana(semana) }),
+  ]);
+
+  const metaPorAgente = new Map(metas.map(m => [m.agenteId, m]));
+
+  const realPorAgente = new Map();
+  for (const r of registros) {
+    if (!realPorAgente.has(r.agenteId)) {
+      realPorAgente.set(r.agenteId, Object.fromEntries(METAS_CAMPOS.map(c => [c.key, 0])));
+    }
+    const acc = realPorAgente.get(r.agenteId);
+    METAS_CAMPOS.forEach(c => { acc[c.key] += Number(r[c.key]) || 0; });
+  }
+
+  const persona = App.agentes.find(a => a.id === lineaId);
+  $('#saludAyuda').textContent =
+    `Semana del ${etiquetaSemana(semana)} · ` +
+    (persona
+      ? (persona.rol === 'Agente' ? persona.nombre : `quienes reportan a ${persona.nombre}`)
+      : 'todas las líneas') +
+    `. Verde ≥ ${SEMAFORO.verde}%, amarillo desde ${SEMAFORO.amarillo}%.`;
+
+  pintarSalud(filasDeSalud(lineaId), metaPorAgente, realPorAgente);
+}
+
+function pintarSalud(filas, metaPorAgente, realPorAgente) {
+  const cont = $('#salud');
+  cont.innerHTML = '';
+
+  if (!filas.length) {
+    cont.appendChild(el('p', { class: 'vacio', text: 'No hay equipos bajo esta vista.' }));
+    $('#saludSinMeta').textContent = '';
+    return;
+  }
+
+  const todosSinMeta = new Set();
+
+  filas.forEach(({ agente, nivel }) => {
+    const s = saludDe(agente, metaPorAgente, realPorAgente);
+    s.sinMeta.forEach(a => todosSinMeta.add(a.nombre));
+
+    const detalle = s.esAgente
+      ? (s.pct === null ? 'Sin meta asignada esta semana'
+                        : `Cumplimiento de su meta semanal`)
+      : (s.conMeta
+          ? `${s.enMeta} de ${s.conMeta} agente(s) en meta` +
+            (s.bajos ? ` · ${s.bajos} por debajo del ${SEMAFORO.amarillo}%` : '')
+          : 'Nadie en su línea tiene meta esta semana');
+
+    // Toda la fila es un botón: al pulsarla se baja a esa línea.
+    const fila = el('button', {
+      class: `salud-fila salud-fila--${s.color}`,
+      type: 'button',
+      style: `--nivel:${nivel}`,
+      onclick: () => bajarALinea(agente.id),
+      title: `Ver el detalle de ${agente.nombre}`,
+    }, [
+      el('span', { class: `punto punto--${s.color}`, 'aria-hidden': 'true' }),
+      el('span', { class: 'salud-nombre' }, [
+        el('span', { class: 'marca-rol', text: agente.rol || 'Agente' }),
+        document.createTextNode(' ' + agente.nombre),
+      ]),
+      el('span', { class: 'salud-detalle', text: detalle }),
+      el('span', { class: `salud-estado salud-estado--${s.color}` },
+        [document.createTextNode(
+          s.pct === null ? ETIQUETA_SEMAFORO.sin
+                         : `${ETIQUETA_SEMAFORO[s.color]} · ${s.pct.toFixed(0)}%`)]),
+    ]);
+
+    cont.appendChild(fila);
+  });
+
+  $('#saludSinMeta').textContent = todosSinMeta.size
+    ? `Sin meta esta semana (no cuentan para el semáforo): ${[...todosSinMeta].join(', ')}.`
+    : '';
+}
+
+/** Baja el foco a una línea desde el semáforo. */
+function bajarALinea(id) {
+  const sel = $('#rs_linea');
+  sel.value = id;
+  localStorage.setItem(LS_LINEA_VISTA, id);
+  refrescarResumen();
+  $('#panel-resumen').scrollIntoView({ behavior: 'smooth', block: 'start' });
+}
 
 const LS_LINEA_VISTA = 'gt_linea_vista';
 
