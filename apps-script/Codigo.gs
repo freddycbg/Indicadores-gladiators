@@ -27,6 +27,15 @@ var COL_METAS = ['id', 'semana', 'agenteId', 'agenteNombre',
 
 var METAS_CAMPOS = ['alp', 'app', 'referidos'];
 
+var HOJA_CONTESTS = 'Contests';
+
+/* requisitos y alcanceIds son listas: se guardan como JSON en su celda. */
+var COL_CONTESTS = ['id', 'nombre', 'desde', 'hasta', 'premioTipo', 'premio',
+                    'requisitos', 'combinacion', 'alcanceTipo', 'alcanceLinea',
+                    'alcanceIds', 'estatus', 'creado', 'actualizado'];
+
+var CONTESTS_JSON = ['requisitos', 'alcanceIds'];
+
 var COL_AGENTES = ['id', 'nombre', 'equipo', 'rol', 'reportaA', 'activo', 'creado'];
 
 /* Jerarquia: el "reporta a" debe tener siempre un rango mayor.
@@ -58,7 +67,8 @@ var METRICAS = ['app', 'press', 'pressSale', 'pressNoSale', 'callerCalls',
 var DIAS_EDICION_LIBRE = 7;
 
 /* Acciones que exigen PIN de administrador siempre */
-var SOLO_ADMIN = ['crearAgente', 'actualizarAgente', 'eliminarAgente', 'guardarMetas'];
+var SOLO_ADMIN = ['crearAgente', 'actualizarAgente', 'eliminarAgente', 'guardarMetas',
+                  'guardarContest', 'eliminarContest'];
 
 /* =========================================================================
    PUNTOS DE ENTRADA HTTP
@@ -101,6 +111,9 @@ function despachar(accion, p) {
     case 'eliminarRegistro': return eliminarRegistro(p.id, p.pin);
     case 'listarMetas':      return listarMetas(p);
     case 'guardarMetas':     return guardarMetas(p.metas);
+    case 'listarContests':   return listarContests();
+    case 'guardarContest':   return guardarContest(p.contest);
+    case 'eliminarContest':  return eliminarContest(p.id);
     case 'validarAdmin':     return esPinValido(p.pinPrueba);
     default: throw new Error('Acción desconocida: ' + accion);
   }
@@ -663,6 +676,97 @@ function guardarMetas(lista) {
 }
 
 /* =========================================================================
+   CONTESTS
+   El progreso no se guarda: se calcula en el navegador leyendo los
+   registros diarios dentro del rango y el alcance del contest.
+   ========================================================================= */
+
+function listarContests() {
+  return leerTodo(HOJA_CONTESTS, COL_CONTESTS).map(function (c) {
+    var salida = {};
+    for (var i = 0; i < COL_CONTESTS.length; i++) {
+      var col = COL_CONTESTS[i];
+      salida[col] = c[col] === undefined || c[col] === null ? '' : c[col];
+    }
+    salida.desde = aFechaISO(c.desde);
+    salida.hasta = aFechaISO(c.hasta);
+
+    // Las listas viajan como JSON; una celda vacia es una lista vacia.
+    for (var j = 0; j < CONTESTS_JSON.length; j++) {
+      var campo = CONTESTS_JSON[j];
+      try {
+        salida[campo] = c[campo] ? JSON.parse(String(c[campo])) : [];
+      } catch (e) {
+        salida[campo] = [];
+      }
+    }
+    return salida;
+  });
+}
+
+function guardarContest(contest) {
+  return conBloqueo(function () {
+    if (!contest || !String(contest.nombre || '').trim()) {
+      throw new Error('El nombre del contest es obligatorio.');
+    }
+
+    var hj = hoja(HOJA_CONTESTS, COL_CONTESTS);
+    var cols = encabezados(hj);
+    var existentes = leerTodo(HOJA_CONTESTS, COL_CONTESTS);
+
+    var previo = null;
+    if (contest.id) {
+      for (var i = 0; i < existentes.length; i++) {
+        if (String(existentes[i].id) === String(contest.id)) previo = existentes[i];
+      }
+    }
+
+    var fila = {};
+    if (previo) for (var c = 0; c < cols.length; c++) fila[cols[c]] = previo[cols[c]];
+
+    fila.id           = previo ? previo.id : nuevoId();
+    fila.nombre       = String(contest.nombre).trim();
+    fila.desde        = aFechaISO(contest.desde);
+    fila.hasta        = aFechaISO(contest.hasta);
+    fila.premioTipo   = String(contest.premioTipo || 'otro');
+    fila.premio       = String(contest.premio || '');
+    fila.requisitos   = JSON.stringify(contest.requisitos || []);
+    fila.combinacion  = String(contest.combinacion || 'todos');
+    fila.alcanceTipo  = String(contest.alcanceTipo || 'todos');
+    fila.alcanceLinea = String(contest.alcanceLinea || '');
+    fila.alcanceIds   = JSON.stringify(contest.alcanceIds || []);
+    fila.estatus      = String(contest.estatus || 'auto');
+    fila.creado       = previo ? previo.creado : ahora();
+    fila.actualizado  = ahora();
+
+    if (fila.desde && fila.hasta && fila.desde > fila.hasta) {
+      throw new Error('La fecha de inicio no puede ser posterior a la de fin.');
+    }
+
+    if (previo) {
+      hj.getRange(previo._fila, 1, 1, cols.length).setValues([aFila(fila, cols)]);
+    } else {
+      hj.appendRow(aFila(fila, cols));
+    }
+    return true;
+  });
+}
+
+function eliminarContest(id) {
+  return conBloqueo(function () {
+    var hj = hoja(HOJA_CONTESTS, COL_CONTESTS);
+    var lista = leerTodo(HOJA_CONTESTS, COL_CONTESTS);
+    for (var i = 0; i < lista.length; i++) {
+      if (String(lista[i].id) === String(id)) {
+        hj.deleteRow(lista[i]._fila);
+        return true;
+      }
+    }
+    throw new Error('El contest ya no existe.');
+  });
+}
+
+/* =========================================================================
    MANTENIMIENTO
    ========================================================================= */
 
@@ -676,7 +780,8 @@ function sincronizarColumnas() {
 
   [[HOJA_REGISTROS, COL_REGISTROS],
    [HOJA_AGENTES, COL_AGENTES],
-   [HOJA_METAS, COL_METAS]].forEach(function (par) {
+   [HOJA_METAS, COL_METAS],
+   [HOJA_CONTESTS, COL_CONTESTS]].forEach(function (par) {
     var hj = hoja(par[0], par[1]);
     var actuales = encabezados(hj);
     var agregadas = [];
@@ -721,18 +826,20 @@ function instalar() {
   hoja(HOJA_AGENTES, COL_AGENTES);
   hoja(HOJA_REGISTROS, COL_REGISTROS);
   hoja(HOJA_METAS, COL_METAS);
+  hoja(HOJA_CONTESTS, COL_CONTESTS);
   var cfg = hoja(HOJA_CONFIG, ['clave', 'valor']);
   if (cfg.getLastRow() < 2) cfg.appendRow(['adminPin', '1010']);
 
   // Las columnas de fecha como texto plano evitan sorpresas de zona horaria.
-  [[HOJA_REGISTROS, 'fecha'], [HOJA_METAS, 'semana']].forEach(function (par) {
+  [[HOJA_REGISTROS, 'fecha'], [HOJA_METAS, 'semana'],
+   [HOJA_CONTESTS, 'desde'], [HOJA_CONTESTS, 'hasta']].forEach(function (par) {
     var hj = libro().getSheetByName(par[0]);
     var col = encabezados(hj).indexOf(par[1]) + 1;
     if (col > 0) hj.getRange(2, col, hj.getMaxRows() - 1).setNumberFormat('@');
   });
 
   SpreadsheetApp.getUi().alert(
-    'Listo. Se crearon las hojas Agentes, Registros, Metas y Config.\n\n' +
+    'Listo. Se crearon las hojas Agentes, Registros, Metas, Contests y Config.\n\n' +
     'El PIN de administrador está en la hoja Config — cámbialo.'
   );
 }

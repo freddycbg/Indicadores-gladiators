@@ -145,6 +145,32 @@ const SEMAFORO = {
   amarillo: 60,   // 60% a 89%  (por debajo: rojo)
 };
 
+/* =========================================================================
+   CONTESTS
+   El progreso se lee de los registros diarios que ya existen: nadie
+   captura avances a mano. Los requisitos usan las mismas metricas de
+   CAMPOS, filtradas por el rango de fechas y el alcance del contest.
+   ========================================================================= */
+const PREMIO_TIPOS = [
+  { key: 'efectivo',    label: 'Efectivo',    icono: '💵' },
+  { key: 'viaje',       label: 'Viaje',       icono: '✈️' },
+  { key: 'experiencia', label: 'Experiencia', icono: '🎁' },
+  { key: 'otro',        label: 'Otro',        icono: '🏆' },
+];
+
+const ALCANCE_TIPOS = [
+  { key: 'todos',     label: 'Todo el equipo' },
+  { key: 'linea',     label: 'Solo la línea de…' },
+  { key: 'seleccion', label: 'Personas seleccionadas' },
+];
+
+/* 'auto' deduce el estado por fecha; los otros dos se fuerzan a mano. */
+const CONTEST_ESTATUS = [
+  { key: 'auto',       label: 'Automático por fecha' },
+  { key: 'finalizado', label: 'Finalizado' },
+  { key: 'cancelado',  label: 'Cancelado' },
+];
+
 /* Métricas destacadas en la fila de indicadores (KPI) de Estadísticas */
 const KPIS = ['app', 'press', 'pressSale', 'pressNoSale', 'callerCalls', 'alp'];
 

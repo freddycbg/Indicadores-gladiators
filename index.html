@@ -31,6 +31,7 @@
     <button class="pestana"           role="tab" data-panel="panel-resumen"      aria-selected="false">Resumen</button>
     <button class="pestana"           role="tab" data-panel="panel-reportes"     aria-selected="false">Reportes</button>
     <button class="pestana"           role="tab" data-panel="panel-metas"        aria-selected="false">Metas</button>
+    <button class="pestana"           role="tab" data-panel="panel-contests"     aria-selected="false">Contests</button>
     <button class="pestana"           role="tab" data-panel="panel-agentes"      aria-selected="false">Agentes</button>
   </nav>
 </header>
@@ -269,6 +270,31 @@
     </div>
   </section>
 
+  <!-- ================= PANEL: CONTESTS ================= -->
+  <section class="panel" id="panel-contests" role="tabpanel">
+
+    <div class="filtros" id="filtrosContests">
+      <div class="campo campo--sm">
+        <label for="ct_estado">Mostrar</label>
+        <select id="ct_estado">
+          <option value="activos" selected>Activos</option>
+          <option value="historico">Finalizados y cancelados</option>
+          <option value="todos">Todos</option>
+        </select>
+      </div>
+      <div class="filtros-acc">
+        <button class="btn btn-primario" id="btnNuevoContest" type="button" hidden>+ Nuevo contest</button>
+      </div>
+    </div>
+
+    <p class="ayuda" id="contestsSoloLectura">
+      El progreso se calcula solo, a partir de los reportes diarios. Nadie
+      captura avances a mano.
+    </p>
+
+    <div class="contests" id="contests"></div>
+  </section>
+
   <!-- ================= PANEL: AGENTES (ADMIN) ================= -->
   <section class="panel" id="panel-agentes" role="tabpanel">
 
@@ -365,6 +391,84 @@
     <div class="acciones acciones--fin">
       <button type="button" class="btn btn-suave" data-cerrar>Cancelar</button>
       <button type="submit" class="btn btn-primario">Guardar</button>
+    </div>
+  </form>
+</dialog>
+
+<!-- ================= DIÁLOGO: CONTEST ================= -->
+<dialog class="dialogo dialogo--ancho" id="dlgContest">
+  <form method="dialog" id="formContest">
+    <h3 id="dlgContestTitulo">Nuevo contest</h3>
+    <input type="hidden" id="ct_id">
+
+    <div class="campo">
+      <label for="ct_nombre">Nombre del contest <span class="req">*</span></label>
+      <input type="text" id="ct_nombre" required autocomplete="off" placeholder="Ej. Contest Cancún Agosto">
+    </div>
+
+    <div class="rejilla-form">
+      <div class="campo">
+        <label for="ct_desde">Fecha de inicio <span class="req">*</span></label>
+        <input type="date" id="ct_desde" required>
+      </div>
+      <div class="campo">
+        <label for="ct_hasta">Fecha de fin <span class="req">*</span></label>
+        <input type="date" id="ct_hasta" required>
+      </div>
+    </div>
+
+    <div class="rejilla-form">
+      <div class="campo">
+        <label for="ct_premioTipo">Tipo de premio</label>
+        <select id="ct_premioTipo"></select>
+      </div>
+      <div class="campo">
+        <label for="ct_premio">Premio <span class="req">*</span></label>
+        <input type="text" id="ct_premio" required autocomplete="off" placeholder="Ej. $500 en efectivo">
+      </div>
+    </div>
+
+    <hr class="separador">
+
+    <div class="campo">
+      <label>Requisitos <span class="req">*</span></label>
+      <div id="ct_requisitos"></div>
+      <button type="button" class="btn-mini" id="btnAgregarRequisito">+ Agregar requisito</button>
+    </div>
+
+    <div class="campo" id="ct_combinacionZona">
+      <label for="ct_combinacion">Con varios requisitos</label>
+      <select id="ct_combinacion">
+        <option value="todos">Debe cumplir TODOS</option>
+        <option value="alguno">Debe cumplir AL MENOS UNO</option>
+      </select>
+    </div>
+
+    <hr class="separador">
+
+    <div class="campo">
+      <label for="ct_alcanceTipo">Alcance</label>
+      <select id="ct_alcanceTipo"></select>
+    </div>
+
+    <div class="campo" id="ct_lineaZona" hidden>
+      <label for="ct_alcanceLinea">Línea</label>
+      <select id="ct_alcanceLinea"></select>
+    </div>
+
+    <div class="campo" id="ct_seleccionZona" hidden>
+      <label>Participantes</label>
+      <div class="lista-check" id="ct_alcanceIds"></div>
+    </div>
+
+    <div class="campo">
+      <label for="ct_estatus">Estado</label>
+      <select id="ct_estatus"></select>
+    </div>
+
+    <div class="acciones acciones--fin">
+      <button type="button" class="btn btn-suave" data-cerrar>Cancelar</button>
+      <button type="submit" class="btn btn-primario">Guardar contest</button>
     </div>
   </form>
 </dialog>

@@ -121,6 +121,7 @@ const Store = (() => {
   const LS_AGENTES   = 'gt_agentes_v1';
   const LS_REGISTROS = 'gt_registros_v1';
   const LS_METAS     = 'gt_metas_v1';
+  const LS_CONTESTS  = 'gt_contests_v1';
   const LS_SEMILLA   = 'gt_semilla_version';
 
   /* Subir este numero al cambiar la FORMA de los datos de prueba (campos
@@ -251,9 +252,70 @@ const Store = (() => {
       }
     }
 
+    /* Contests de ejemplo: dos vigentes, uno terminado y uno cancelado. */
+    const contests = [
+      {
+        id: 'c1',
+        nombre: 'Contest Cancún Agosto',
+        desde: sumarDias(hoyISO(), -12),
+        hasta: sumarDias(hoyISO(), 9),
+        premioTipo: 'viaje',
+        premio: 'Viaje a Cancún, 3 noches todo incluido',
+        requisitos: [{ campo: 'alp', meta: 12000 }, { campo: 'pressSale', meta: 8 }],
+        combinacion: 'todos',
+        alcanceTipo: 'todos',
+        alcanceLinea: '',
+        alcanceIds: [],
+        estatus: 'auto',
+      },
+      {
+        id: 'c2',
+        nombre: 'Reto de Referidos',
+        desde: sumarDias(hoyISO(), -5),
+        hasta: sumarDias(hoyISO(), 2),
+        premioTipo: 'efectivo',
+        premio: '$500 en efectivo',
+        requisitos: [{ campo: 'referidos', meta: 20 }],
+        combinacion: 'todos',
+        alcanceTipo: 'linea',
+        alcanceLinea: 'a2',                  // linea del GA
+        alcanceIds: [],
+        estatus: 'auto',
+      },
+      {
+        id: 'c3',
+        nombre: 'Cierre de Julio',
+        desde: sumarDias(hoyISO(), -40),
+        hasta: sumarDias(hoyISO(), -10),
+        premioTipo: 'experiencia',
+        premio: 'Cena para dos + noche de hotel',
+        requisitos: [{ campo: 'alp', meta: 25000 }, { campo: 'app', meta: 60 }],
+        combinacion: 'alguno',
+        alcanceTipo: 'todos',
+        alcanceLinea: '',
+        alcanceIds: [],
+        estatus: 'auto',
+      },
+      {
+        id: 'c4',
+        nombre: 'Sprint de Llamadas',
+        desde: sumarDias(hoyISO(), -20),
+        hasta: sumarDias(hoyISO(), -6),
+        premioTipo: 'otro',
+        premio: 'Día libre adicional',
+        requisitos: [{ campo: 'callerCalls', meta: 400 }],
+        combinacion: 'todos',
+        alcanceTipo: 'seleccion',
+        alcanceIds: ['a9', 'a12', 'a16'],
+        alcanceLinea: '',
+        estatus: 'cancelado',
+      },
+    ];
+
     escribirLS(LS_AGENTES, agentes);
     escribirLS(LS_REGISTROS, registros);
     escribirLS(LS_METAS, metas);
+    escribirLS(LS_CONTESTS, contests);
     localStorage.setItem(LS_SEMILLA, SEMILLA_VERSION);
   }
 
@@ -423,6 +485,32 @@ const Store = (() => {
       return { guardadas, borradas };
     },
 
+    /* ---- Contests ------------------------------------------------------ */
+
+    async listarContests() {
+      return leerLS(LS_CONTESTS, []);
+    },
+
+    async guardarContest(contest) {
+      const lista = leerLS(LS_CONTESTS, []);
+      const fila = { ...contest, actualizado: new Date().toISOString() };
+
+      const i = lista.findIndex(c => c.id === contest.id);
+      if (i >= 0) {
+        lista[i] = { ...lista[i], ...fila };
+      } else {
+        lista.push({ ...fila, id: nuevoId(), creado: new Date().toISOString() });
+      }
+      escribirLS(LS_CONTESTS, lista);
+      return true;
+    },
+
+    async eliminarContest(id) {
+      const lista = leerLS(LS_CONTESTS, []).filter(c => c.id !== id);
+      escribirLS(LS_CONTESTS, lista);
+      return true;
+    },
+
     async validarAdmin(pin) {
       return pin === CONFIG.ADMIN_PIN_DEMO;
     },
@@ -466,6 +554,9 @@ const Store = (() => {
     eliminarRegistro:  (id)           => llamar('eliminarRegistro', { id }),
     listarMetas:       (f = {})       => llamar('listarMetas', f),
     guardarMetas:      (lista)        => llamar('guardarMetas', { metas: lista }),
+    listarContests:    ()             => llamar('listarContests'),
+    guardarContest:    (c)            => llamar('guardarContest', { contest: c }),
+    eliminarContest:   (id)           => llamar('eliminarContest', { id }),
     validarAdmin:      (pin)          => llamar('validarAdmin', { pinPrueba: pin }),
     reiniciarDemo:     async ()       => { throw new Error('No disponible en modo Sheets.'); },
   };

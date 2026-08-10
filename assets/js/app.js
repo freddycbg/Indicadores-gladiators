@@ -59,6 +59,7 @@ function iniciarPestanas() {
       if (btn.dataset.panel === 'panel-resumen')  refrescarResumen();
       if (btn.dataset.panel === 'panel-reportes') refrescarReportes();
       if (btn.dataset.panel === 'panel-metas')    refrescarMetas();
+      if (btn.dataset.panel === 'panel-contests') refrescarContests();
       if (btn.dataset.panel === 'panel-agentes')  refrescarPanelAgentes();
     });
   });
@@ -1360,6 +1361,410 @@ async function copiarMetasSemanaAnterior() {
 }
 
 /* =========================================================================
+   PANEL CONTESTS
+   El avance se lee de los registros diarios ya existentes, acotados por el
+   rango de fechas y el alcance del contest. Nadie captura progreso.
+   ========================================================================= */
+
+function iniciarContests() {
+  $('#ct_estado').addEventListener('change', refrescarContests);
+  $('#btnNuevoContest').addEventListener('click', () => abrirDlgContest(null));
+  $('#btnAgregarRequisito').addEventListener('click', () => agregarFilaRequisito());
+
+  $('#ct_alcanceTipo').addEventListener('change', e => {
+    $('#ct_lineaZona').hidden     = e.target.value !== 'linea';
+    $('#ct_seleccionZona').hidden = e.target.value !== 'seleccion';
+  });
+
+  $('#formContest').addEventListener('submit', guardarContestDesdeForm);
+}
+
+/** activo | proximo | finalizado | cancelado */
+function estadoDeContest(c) {
+  if (c.estatus === 'cancelado')  return 'cancelado';
+  if (c.estatus === 'finalizado') return 'finalizado';
+  const hoy = hoyISO();
+  if (hoy < c.desde) return 'proximo';
+  if (hoy > c.hasta) return 'finalizado';
+  return 'activo';
+}
+
+const ETIQUETA_CONTEST = {
+  activo: 'En curso', proximo: 'Por empezar',
+  finalizado: 'Finalizado', cancelado: 'Cancelado',
+};
+
+/** Agentes que participan, según el alcance declarado. */
+function participantesDe(c) {
+  const activos = App.agentes.filter(a => a.activo !== false);
+
+  if (c.alcanceTipo === 'seleccion') {
+    const ids = new Set(c.alcanceIds || []);
+    return App.agentes.filter(a => ids.has(a.id));
+  }
+  if (c.alcanceTipo === 'linea' && c.alcanceLinea) {
+    const alcance = alcanceDe(c.alcanceLinea);
+    return activos.filter(a => alcance.has(a.id) && a.rol === 'Agente');
+  }
+  return activos.filter(a => a.rol === 'Agente');
+}
+
+/**
+ * Avance de un agente. Con "todos" el avance honesto es el requisito peor
+ * parado, porque hasta que ese no se cumpla no hay premio; con "alguno",
+ * el mejor.
+ */
+function progresoDe(c, agenteId, registros) {
+  const suyos = registros.filter(
+    r => r.agenteId === agenteId && r.fecha >= c.desde && r.fecha <= c.hasta);
+
+  const detalles = (c.requisitos || []).map(req => {
+    const campo = CAMPOS.find(x => x.key === req.campo);
+    const real = suyos.reduce((t, r) => t + (Number(r[req.campo]) || 0), 0);
+    const meta = Number(req.meta) || 0;
+    return {
+      campo, real, meta,
+      ratio: meta > 0 ? real / meta : 1,
+      cumplido: meta > 0 ? real >= meta : true,
+    };
+  });
+
+  if (!detalles.length) return { ratio: 0, cumplido: false, detalles };
+
+  const ratios = detalles.map(d => Math.min(d.ratio, 1));
+  const ratio = c.combinacion === 'alguno' ? Math.max(...ratios) : Math.min(...ratios);
+  const cumplido = c.combinacion === 'alguno'
+    ? detalles.some(d => d.cumplido)
+    : detalles.every(d => d.cumplido);
+
+  return { ratio, cumplido, detalles };
+}
+
+/** "ALP ≥ 12,000.00 y Ventas ≥ 8" */
+function textoRequisitos(c) {
+  if (!c.requisitos || !c.requisitos.length) return 'Sin requisitos definidos';
+  const union = c.combinacion === 'alguno' ? ' o ' : ' y ';
+  return c.requisitos.map(r => {
+    const campo = CAMPOS.find(x => x.key === r.campo);
+    return `${campo ? campo.corto : r.campo} ≥ ${fmt(r.meta, campo ? campo.tipo : 'entero')}`;
+  }).join(union);
+}
+
+async function refrescarContests() {
+  const esAdmin = Sesion.esAdmin();
+  $('#btnNuevoContest').hidden = !esAdmin;
+
+  const todos = await Store.listarContests();
+  const filtro = $('#ct_estado').value;
+
+  const visibles = todos.filter(c => {
+    const e = estadoDeContest(c);
+    if (filtro === 'activos')   return e === 'activo' || e === 'proximo';
+    if (filtro === 'historico') return e === 'finalizado' || e === 'cancelado';
+    return true;
+  }).sort((a, b) => (b.desde < a.desde ? -1 : b.desde > a.desde ? 1 : 0));
+
+  // Una sola consulta que cubra todos los rangos en pantalla
+  let registros = [];
+  if (visibles.length) {
+    registros = await Store.listarRegistros({
+      desde: visibles.reduce((m, c) => (c.desde < m ? c.desde : m), visibles[0].desde),
+      hasta: visibles.reduce((m, c) => (c.hasta > m ? c.hasta : m), visibles[0].hasta),
+    });
+  }
+
+  pintarContests(visibles, registros, esAdmin);
+}
+
+function pintarContests(lista, registros, esAdmin) {
+  const cont = $('#contests');
+  cont.innerHTML = '';
+
+  if (!lista.length) {
+    cont.appendChild(el('p', { class: 'vacio', text: 'No hay contests que mostrar.' }));
+    return;
+  }
+  lista.forEach(c => cont.appendChild(tarjetaContest(c, registros, esAdmin)));
+}
+
+function tarjetaContest(c, registros, esAdmin) {
+  const estado = estadoDeContest(c);
+  const tipo = PREMIO_TIPOS.find(p => p.key === c.premioTipo) || PREMIO_TIPOS[3];
+  const participantes = participantesDe(c);
+
+  const avances = participantes
+    .map(a => ({ agente: a, ...progresoDe(c, a.id, registros) }))
+    .sort((x, y) => (y.cumplido - x.cumplido) || (y.ratio - x.ratio));
+
+  const cumplieron = avances.filter(a => a.cumplido).length;
+  const dias = diasDesde(c.hasta) * -1;   // positivo = faltan dias
+
+  const encabezado = el('div', { class: 'contest-cab' }, [
+    el('span', { class: 'contest-icono', 'aria-hidden': 'true', text: tipo.icono }),
+    el('div', { class: 'contest-titulo' }, [
+      el('h3', { text: c.nombre }),
+      el('p', { class: 'contest-premio', text: c.premio }),
+    ]),
+    el('span', { class: `contest-estado contest-estado--${estado}`, text: ETIQUETA_CONTEST[estado] }),
+  ]);
+
+  const meta = el('div', { class: 'contest-meta' }, [
+    el('span', { class: 'contest-req', text: textoRequisitos(c) }),
+    el('span', {
+      class: 'contest-dias',
+      text: estado === 'activo'
+        ? (dias === 0 ? 'Último día' : `Faltan ${dias} día(s)`)
+        : estado === 'proximo'
+          ? `Empieza el ${fechaCorta(c.desde)}`
+          : `${fechaCorta(c.desde)} — ${fechaCorta(c.hasta)}`,
+    }),
+  ]);
+
+  const listaAvance = el('div', { class: 'contest-lista' },
+    avances.length
+      ? avances.map(a => filaAvance(a, c))
+      : [el('p', { class: 'vacio', text: 'Sin participantes en el alcance definido.' })]);
+
+  const pie = el('div', { class: 'contest-pie' }, [
+    el('span', {
+      class: 'ayuda',
+      text: `${cumplieron} de ${avances.length} cumplieron · ` +
+            `Alcance: ${textoAlcance(c)}`,
+    }),
+    el('span', { class: 'contest-acc' }, [
+      el('button', {
+        class: 'btn-mini', type: 'button', text: 'Exportar CSV',
+        onclick: () => exportarContestCSV(c, avances),
+      }),
+      esAdmin ? el('button', {
+        class: 'btn-mini', type: 'button', text: 'Editar',
+        onclick: () => abrirDlgContest(c),
+      }) : null,
+      esAdmin ? el('button', {
+        class: 'btn-mini btn-mini--peligro', type: 'button', text: 'Eliminar',
+        onclick: () => eliminarContest(c),
+      }) : null,
+    ].filter(Boolean)),
+  ]);
+
+  return el('article', { class: `tarjeta contest contest--${estado}` },
+    [encabezado, meta, listaAvance, pie]);
+}
+
+function filaAvance({ agente, ratio, cumplido, detalles }, c) {
+  const pct = Math.round(ratio * 100);
+
+  return el('div', { class: 'avance' }, [
+    el('span', { class: 'avance-nombre', text: agente.nombre }),
+    el('span', { class: 'barra', role: 'img',
+      'aria-label': `${pct}% de avance`,
+    }, [
+      el('span', {
+        class: 'barra-relleno' + (cumplido ? ' barra-relleno--ok' : ''),
+        style: `width:${Math.max(2, pct)}%`,
+      }),
+    ]),
+    el('span', {
+      class: 'avance-detalle',
+      text: detalles.map(d =>
+        `${d.campo ? d.campo.corto : '?'} ${fmt(d.real, d.campo ? d.campo.tipo : 'entero')}/${fmt(d.meta, d.campo ? d.campo.tipo : 'entero')}`
+      ).join(' · '),
+    }),
+    el('span', {
+      class: 'avance-estado ' + (cumplido ? 'avance-estado--ok' : ''),
+      text: cumplido ? '✓ Cumplido' : `${pct}%`,
+    }),
+  ]);
+}
+
+function textoAlcance(c) {
+  if (c.alcanceTipo === 'seleccion') return `${(c.alcanceIds || []).length} persona(s) elegidas`;
+  if (c.alcanceTipo === 'linea') {
+    const p = App.agentes.find(a => a.id === c.alcanceLinea);
+    return p ? `línea de ${p.nombre}` : 'línea eliminada';
+  }
+  return 'todo el equipo';
+}
+
+function exportarContestCSV(c, avances) {
+  const cab = ['Contest', 'Desde', 'Hasta', 'Agente', 'Cumplió', 'Avance %'];
+  (c.requisitos || []).forEach(r => {
+    const campo = CAMPOS.find(x => x.key === r.campo);
+    cab.push(`${campo ? campo.corto : r.campo} real`, `${campo ? campo.corto : r.campo} meta`);
+  });
+
+  const filas = avances.map(a => {
+    const fila = [c.nombre, c.desde, c.hasta, a.agente.nombre,
+                  a.cumplido ? 'Sí' : 'No', Math.round(a.ratio * 100)];
+    a.detalles.forEach(d => fila.push(d.real, d.meta));
+    return fila;
+  });
+
+  const csv = [cab, ...filas]
+    .map(f => f.map(v => `"${String(v).replace(/"/g, '""')}"`).join(','))
+    .join('\r\n');
+
+  const blob = new Blob(['﻿' + csv], { type: 'text/csv;charset=utf-8;' });
+  const a = el('a', {
+    href: URL.createObjectURL(blob),
+    download: `contest_${c.nombre.replace(/[^\w]+/g, '_').toLowerCase()}.csv`,
+  });
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  aviso('Resultados exportados.');
+}
+
+/* ---------- Alta y edición ---------------------------------------------- */
+
+function agregarFilaRequisito(req = null) {
+  const cont = $('#ct_requisitos');
+
+  const selCampo = el('select', { class: 'req-campo' });
+  CAMPOS.forEach(c => selCampo.appendChild(el('option', { value: c.key, text: c.label })));
+  if (req) selCampo.value = req.campo;
+
+  const fila = el('div', { class: 'req-fila' }, [
+    selCampo,
+    el('input', {
+      type: 'number', class: 'req-meta', min: '0', step: 'any',
+      placeholder: 'Meta', inputmode: 'decimal',
+      value: req ? req.meta : '',
+    }),
+    el('button', {
+      class: 'btn-mini btn-mini--peligro', type: 'button', text: '✕',
+      'aria-label': 'Quitar requisito',
+      onclick: () => { fila.remove(); actualizarZonaCombinacion(); },
+    }),
+  ]);
+
+  cont.appendChild(fila);
+  actualizarZonaCombinacion();
+}
+
+/** La forma de combinar solo tiene sentido con más de un requisito. */
+function actualizarZonaCombinacion() {
+  $('#ct_combinacionZona').hidden = $$('#ct_requisitos .req-fila').length < 2;
+}
+
+function abrirDlgContest(c) {
+  $('#dlgContestTitulo').textContent = c ? 'Editar contest' : 'Nuevo contest';
+  $('#ct_id').value     = c ? c.id : '';
+  $('#ct_nombre').value = c ? c.nombre : '';
+  $('#ct_desde').value  = c ? c.desde : hoyISO();
+  $('#ct_hasta').value  = c ? c.hasta : sumarDias(hoyISO(), 14);
+  $('#ct_premio').value = c ? c.premio : '';
+
+  const llenar = (sel, lista, valor) => {
+    const s = $(sel);
+    s.innerHTML = '';
+    lista.forEach(x => s.appendChild(el('option', { value: x.key, text: x.label })));
+    s.value = valor;
+  };
+  llenar('#ct_premioTipo', PREMIO_TIPOS,     c ? c.premioTipo : 'efectivo');
+  llenar('#ct_alcanceTipo', ALCANCE_TIPOS,   c ? c.alcanceTipo : 'todos');
+  llenar('#ct_estatus', CONTEST_ESTATUS,     c ? (c.estatus || 'auto') : 'auto');
+
+  $('#ct_combinacion').value = c ? (c.combinacion || 'todos') : 'todos';
+
+  $('#ct_requisitos').innerHTML = '';
+  (c && c.requisitos && c.requisitos.length ? c.requisitos : [null])
+    .forEach(r => agregarFilaRequisito(r));
+
+  llenarSelectLinea($('#ct_alcanceLinea'));
+  $('#ct_alcanceLinea').value = c ? (c.alcanceLinea || '') : '';
+
+  // Casillas de participantes para el alcance a mano
+  const zona = $('#ct_alcanceIds');
+  zona.innerHTML = '';
+  const elegidos = new Set(c ? (c.alcanceIds || []) : []);
+  App.agentes
+    .filter(a => a.rol === 'Agente' && a.activo !== false)
+    .sort((a, b) => a.nombre.localeCompare(b.nombre, 'es'))
+    .forEach(a => {
+      zona.appendChild(el('label', { class: 'check-item' }, [
+        el('input', { type: 'checkbox', value: a.id, checked: elegidos.has(a.id) }),
+        document.createTextNode(' ' + a.nombre),
+      ]));
+    });
+
+  $('#ct_lineaZona').hidden     = $('#ct_alcanceTipo').value !== 'linea';
+  $('#ct_seleccionZona').hidden = $('#ct_alcanceTipo').value !== 'seleccion';
+
+  $('#dlgContest').showModal();
+  $('#ct_nombre').focus();
+}
+
+async function guardarContestDesdeForm(e) {
+  e.preventDefault();
+
+  const requisitos = $$('#ct_requisitos .req-fila')
+    .map(f => ({
+      campo: f.querySelector('.req-campo').value,
+      meta: nDecimal(f.querySelector('.req-meta').value),
+    }))
+    .filter(r => r.meta > 0);
+
+  const contest = {
+    id: $('#ct_id').value || undefined,
+    nombre: $('#ct_nombre').value.trim(),
+    desde: $('#ct_desde').value,
+    hasta: $('#ct_hasta').value,
+    premioTipo: $('#ct_premioTipo').value,
+    premio: $('#ct_premio').value.trim(),
+    requisitos,
+    combinacion: $('#ct_combinacion').value,
+    alcanceTipo: $('#ct_alcanceTipo').value,
+    alcanceLinea: $('#ct_alcanceLinea').value,
+    alcanceIds: $$('#ct_alcanceIds input:checked').map(i => i.value),
+    estatus: $('#ct_estatus').value,
+  };
+
+  if (!contest.nombre)   return aviso('El nombre del contest es obligatorio.', 'error');
+  if (!contest.premio)   return aviso('Describe el premio.', 'error');
+  if (!contest.desde || !contest.hasta) return aviso('Faltan las fechas del contest.', 'error');
+  if (contest.desde > contest.hasta) {
+    return aviso('La fecha de inicio no puede ser posterior a la de fin.', 'error');
+  }
+  if (!requisitos.length) {
+    return aviso('Define al menos un requisito con una meta mayor que cero.', 'error');
+  }
+  if (contest.alcanceTipo === 'linea' && !contest.alcanceLinea) {
+    return aviso('Elige la línea a la que aplica el contest.', 'error');
+  }
+  if (contest.alcanceTipo === 'seleccion' && !contest.alcanceIds.length) {
+    return aviso('Marca al menos un participante.', 'error');
+  }
+
+  try {
+    await Store.guardarContest(contest);
+    $('#dlgContest').close();
+    await refrescarContests();
+    aviso(contest.id ? 'Contest actualizado.' : 'Contest creado.');
+  } catch (err) {
+    aviso(err.message, 'error');
+  }
+}
+
+async function eliminarContest(c) {
+  const ok = await confirmar({
+    titulo: `Eliminar ${c.nombre}`,
+    texto: 'El contest se borrará del sistema. Los reportes diarios no se tocan; ' +
+           'solo desaparece el contest y su seguimiento.',
+    etiquetaOk: 'Eliminar',
+  });
+  if (!ok) return;
+
+  try {
+    await Store.eliminarContest(c.id);
+    await refrescarContests();
+    aviso('Contest eliminado.');
+  } catch (err) {
+    aviso(err.message, 'error');
+  }
+}
+
+/* =========================================================================
    PANEL AGENTES (ADMINISTRADOR)
    ========================================================================= */
 
@@ -1376,7 +1781,8 @@ function iniciarAgentes() {
       // Con sesión abierta cambian los permisos: repintar lo afectado.
       await pintarRecientes();
       await refrescarMetas();
-      aviso('Sesión de administrador iniciada. Ya puedes corregir cualquier fecha y fijar metas.');
+      await refrescarContests();
+      aviso('Sesión de administrador iniciada. Ya puedes corregir cualquier fecha, fijar metas y crear contests.');
     } catch (err) {
       aviso(err.message, 'error');
     }
@@ -1388,6 +1794,7 @@ function iniciarAgentes() {
     await refrescarPanelAgentes();
     await pintarRecientes();
     await refrescarMetas();
+    await refrescarContests();
     limpiarFormulario();
   });
 
@@ -1707,6 +2114,7 @@ async function iniciar() {
   iniciarResumen();
   iniciarReportes();
   iniciarMetas();
+  iniciarContests();
   iniciarAgentes();
 
   $('#marcaEquipo').textContent = CONFIG.EQUIPO;

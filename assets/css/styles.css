@@ -826,6 +826,139 @@ input:invalid:not(:placeholder-shown) { border-color: var(--critico); }
 
 .aviso-celda { color: var(--critico); font-weight: 600; cursor: help; }
 
+/* ---------- Contests ----------------------------------------------------- */
+
+/* Pensada para que cuatro contests activos quepan cómodos en paralelo.
+   El mínimo es 300px y no 340 para que no se desborde en un teléfono de
+   360px, donde el contenedor deja unos 324. */
+.contests {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+  gap: 18px;
+  align-items: start;
+}
+
+.contest { margin-bottom: 0; }
+.contest--cancelado, .contest--finalizado { opacity: .82; }
+
+.contest-cab {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  margin-bottom: 12px;
+}
+.contest-icono { font-size: 1.7rem; line-height: 1; flex: none; }
+.contest-titulo { flex: 1; min-width: 0; }
+.contest-titulo h3 { font-size: 1rem; }
+.contest-premio { margin: 2px 0 0; font-size: .84rem; color: var(--tinta-2); }
+
+.contest-estado {
+  flex: none;
+  font-size: .7rem;
+  font-weight: 700;
+  letter-spacing: .04em;
+  text-transform: uppercase;
+  padding: 3px 9px;
+  border-radius: 999px;
+}
+.contest-estado--activo     { background: rgba(12,163,12,.12); color: var(--bien); }
+.contest-estado--proximo    { background: var(--acento-lavado); color: var(--acento-alto); }
+.contest-estado--finalizado { background: var(--superficie-2); color: var(--tinta-3); }
+.contest-estado--cancelado  { background: var(--critico-lav); color: var(--critico); }
+
+.contest-meta {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  gap: 6px 14px;
+  padding: 9px 11px;
+  border-radius: var(--r-sm);
+  background: var(--superficie-2);
+  font-size: .82rem;
+  margin-bottom: 12px;
+}
+.contest-req  { font-weight: 600; }
+.contest-dias { color: var(--tinta-3); white-space: nowrap; }
+
+.contest-lista { display: flex; flex-direction: column; }
+
+.avance {
+  display: grid;
+  grid-template-columns: minmax(90px, 1fr) 2fr auto;
+  grid-template-areas: "nombre barra estado" "detalle detalle detalle";
+  align-items: center;
+  gap: 4px 10px;
+  padding: 8px 0;
+  border-bottom: 1px solid var(--borde);
+  font-size: .84rem;
+}
+.avance:last-child { border-bottom: 0; }
+
+.avance-nombre  { grid-area: nombre; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.avance-detalle { grid-area: detalle; color: var(--tinta-3); font-size: .76rem;
+                  font-variant-numeric: tabular-nums; }
+.avance-estado  { grid-area: estado; font-weight: 600; font-variant-numeric: tabular-nums;
+                  white-space: nowrap; color: var(--tinta-2); }
+.avance-estado--ok { color: var(--bien); }
+
+.barra {
+  grid-area: barra;
+  display: block;
+  height: 7px;
+  border-radius: 999px;
+  background: var(--superficie-2);
+  overflow: hidden;
+}
+.barra-relleno {
+  display: block;
+  height: 100%;
+  border-radius: 999px;
+  background: var(--acento);
+  transition: width .25s;
+}
+.barra-relleno--ok { background: var(--bien); }
+
+.contest-pie {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin-top: 12px;
+  padding-top: 11px;
+  border-top: 1px solid var(--borde);
+}
+.contest-pie .ayuda { margin: 0; }
+.contest-acc { display: flex; gap: 6px; flex-wrap: wrap; }
+
+/* Requisitos dentro del diálogo */
+.req-fila {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  margin-bottom: 8px;
+}
+.req-fila .req-campo { flex: 1; min-width: 0; }
+.req-fila .req-meta  { width: 110px; flex: none; }
+
+.lista-check {
+  max-height: 190px;
+  overflow-y: auto;
+  border: 1px solid var(--borde-fuerte);
+  border-radius: var(--r-sm);
+  padding: 9px 11px;
+}
+.check-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 3px 0;
+  font-size: .88rem;
+  cursor: pointer;
+}
+
+.dialogo--ancho { width: min(560px, calc(100vw - 32px)); max-height: 88vh; overflow-y: auto; }
+
 /* ---------- Roles y organigrama ----------------------------------------- */
 
 .marca-rol {
