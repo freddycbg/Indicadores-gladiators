@@ -543,6 +543,28 @@ const Store = (() => {
     return json.data;
   }
 
+  /* Marca si el Apps Script publicado todavia no conoce las funciones
+     nuevas. Permite subir la pagina y actualizar la hoja despues, sin que
+     el equipo se encuentre errores mientras tanto. */
+  let backendViejo = false;
+
+  function esAccionDesconocida(err) {
+    return /Acci[oó]n desconocida/i.test(String(err && err.message));
+  }
+
+  /** Si el backend aun no tiene la accion, devuelve un valor vacio. */
+  async function tolerante(fn, vacio) {
+    try {
+      return await fn();
+    } catch (err) {
+      if (esAccionDesconocida(err)) {
+        backendViejo = true;
+        return vacio;
+      }
+      throw err;
+    }
+  }
+
   const sheets = {
     listarAgentes:     ()             => llamar('listarAgentes'),
     crearAgente:       (a)            => llamar('crearAgente', { agente: a }),
@@ -552,9 +574,14 @@ const Store = (() => {
     obtenerRegistro:   (c)            => llamar('obtenerRegistro', c),
     guardarRegistro:   (r)            => llamar('guardarRegistro', { registro: r }),
     eliminarRegistro:  (id)           => llamar('eliminarRegistro', { id }),
-    listarMetas:       (f = {})       => llamar('listarMetas', f),
+    // Lecturas tolerantes: si la hoja aun no tiene estas funciones, la
+    // pestana se ve vacia en vez de romperse.
+    listarMetas:       (f = {})       => tolerante(() => llamar('listarMetas', f), []),
+    listarContests:    ()             => tolerante(() => llamar('listarContests'), []),
+
+    // Las escrituras si fallan a la vista: guardar algo que no se guarda
+    // seria peor que un error claro.
     guardarMetas:      (lista)        => llamar('guardarMetas', { metas: lista }),
-    listarContests:    ()             => llamar('listarContests'),
     guardarContest:    (c)            => llamar('guardarContest', { contest: c }),
     eliminarContest:   (id)           => llamar('eliminarContest', { id }),
     validarAdmin:      (pin)          => llamar('validarAdmin', { pinPrueba: pin }),
@@ -582,6 +609,8 @@ const Store = (() => {
     esDemo: MODO_EFECTIVO === 'demo',
     modo: MODO_EFECTIVO,
     esPaginaDePrueba: enLocalhost && CONFIG.MODO_LOCALHOST === 'demo',
+    /** true si el Apps Script publicado aun no tiene Metas ni Contests. */
+    backendDesactualizado: () => backendViejo,
   };
 })();
 

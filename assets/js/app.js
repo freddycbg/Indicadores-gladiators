@@ -430,6 +430,12 @@ async function refrescarReportes() {
   pintarDetalle();
 }
 
+/** Muestra el aviso si el Apps Script publicado se quedó atrás. */
+function revisarBackend() {
+  $('#avisoBackend').hidden = !Store.backendDesactualizado ||
+                              !Store.backendDesactualizado();
+}
+
 /** Recupera la última línea elegida en este dispositivo. */
 function restaurarLineaVista(select) {
   const guardada = localStorage.getItem(LS_LINEA_VISTA);
@@ -792,6 +798,7 @@ async function refrescarSalud(lineaId) {
     Store.listarMetas({ semana }),
     Store.listarRegistros({ desde: semana, hasta: domingoDeLaSemana(semana) }),
   ]);
+  revisarBackend();
 
   const metaPorAgente = new Map(metas.map(m => [m.agenteId, m]));
 
@@ -820,7 +827,12 @@ function pintarSalud(filas, metaPorAgente, realPorAgente) {
   cont.innerHTML = '';
 
   if (!filas.length) {
-    cont.appendChild(el('p', { class: 'vacio', text: 'No hay equipos bajo esta vista.' }));
+    // Sin jerarquía no hay equipos que evaluar: conviene decir por qué en
+    // vez de dejar un panel vacío sin explicación.
+    const hayLideres = App.agentes.some(a => a.rol && a.rol !== 'Agente');
+    cont.appendChild(el('p', { class: 'vacio', text: hayLideres
+      ? 'No hay equipos bajo esta vista.'
+      : 'Todavía no hay jerarquía definida. Asigna roles y "reporta a" en la pestaña Agentes para ver la salud por equipo.' }));
     $('#saludSinMeta').textContent = '';
     return;
   }
@@ -1105,6 +1117,7 @@ async function refrescarMetas() {
   $('#btnCopiarMetas').disabled = !esAdmin;
 
   const metas = await Store.listarMetas({ semana: App.semanaMetas });
+  revisarBackend();
   App.metasSemana = new Map(metas.map(m => [m.agenteId, m]));
 
   // Lo realmente logrado en esa semana, para comparar contra la meta
@@ -1455,6 +1468,7 @@ async function refrescarContests() {
   $('#btnNuevoContest').hidden = !esAdmin;
 
   const todos = await Store.listarContests();
+  revisarBackend();
   const filtro = $('#ct_estado').value;
 
   const visibles = todos.filter(c => {
@@ -2101,10 +2115,17 @@ function confirmar({ titulo, texto, etiquetaOk = 'Eliminar', conExtra = false })
    ========================================================================= */
 
 async function cargarAgentes() {
-  App.agentes = await Store.listarAgentes();
+  // El rol puede faltar si la hoja aun no tiene la columna: sin este valor
+  // por defecto, rangoDeRol daria -1 y el organigrama quedaria incoherente.
+  App.agentes = (await Store.listarAgentes()).map(a => ({
+    ...a,
+    rol: a.rol || ROL_POR_DEFECTO,
+    reportaA: a.reportaA || '',
+  }));
   llenarSelectAgentes($('#f_agente'), { soloActivos: true });
   llenarSelectJerarquia($('#rs_linea'));
   llenarSelectJerarquia($('#rp_linea'));
+  revisarBackend();
 }
 
 async function iniciar() {

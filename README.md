@@ -1,7 +1,19 @@
 # Seguimiento Diario · Gladiator's Team
 
-Aplicación web para que los agentes suban su reporte diario, con panel de
-administración de agentes y una sección de estadísticas y reportes.
+Aplicación web para que los agentes suban su reporte diario, con jerarquía de
+equipo, metas semanales, semáforo de salud, contests y reportes por rango de
+fechas.
+
+## Las seis pestañas
+
+| Pestaña | Para qué |
+|---|---|
+| **Registro** | Captura del reporte diario. Corregir o borrar el propio. |
+| **Resumen** | "¿Cómo vamos?" — semáforo, indicadores, comparativa semanal, gráficas. |
+| **Reportes** | "Dame los números de tal fecha" — tablas, imprimir, CSV. |
+| **Metas** | Meta semanal por agente. Los totales por línea se suman solos. |
+| **Contests** | Concursos con premio y avance calculado desde los reportes. |
+| **Agentes** | Catálogo, roles, "reporta a" y organigrama. Requiere PIN. |
 
 - **Frontend:** HTML, CSS y JavaScript sin dependencias externas. Se sube tal cual
   a cualquier hosting (incluido `astral-gt.com`).
@@ -17,8 +29,13 @@ administración de agentes y una sección de estadísticas y reportes.
 node dev-server.js
 ```
 
-Abre <http://localhost:5173>. Los datos se guardan solo en tu navegador
-(`localStorage`), así que puedes probar todo sin miedo a romper nada.
+Abre <http://localhost:5173>. **Al abrir desde localhost la página usa siempre
+datos ficticios**, aunque `CONFIG.MODO` sea `'sheets'` — lo controla
+`CONFIG.MODO_LOCALHOST`. Así se puede probar sin tocar la hoja de producción.
+
+Los datos de prueba traen un organigrama de 21 personas, metas de seis semanas y
+cuatro contests. Si cambias la forma de esos datos, sube `SEMILLA_VERSION` en
+`store.js` o los navegadores que ya tengan la semilla vieja no verán la nueva.
 
 - PIN de administrador de prueba: **2468**
 - Para volver a los datos originales: pestaña **Agentes → Reiniciar datos de prueba**
@@ -96,6 +113,14 @@ producción.
 | `apps-script/Codigo.gs` | Backend que vive dentro del Google Sheet |
 | `dev-server.js` | Servidor local para desarrollo |
 
+La hoja de Google tiene cinco pestañas: `Agentes`, `Registros`, `Metas`,
+`Contests` y `Config`.
+
+> **Al desplegar una versión con funciones nuevas**, actualiza primero el Apps
+> Script. Si no lo haces, la página lo detecta y muestra un aviso: las pestañas
+> que dependen del backend nuevo se ven vacías, pero el registro diario y los
+> reportes siguen funcionando.
+
 ---
 
 ## 5. Agregar o quitar métricas del formulario
@@ -159,7 +184,47 @@ página.
 
 ---
 
-## 7. Notas de funcionamiento
+## 7. Jerarquía, metas, semáforo y contests
+
+### Jerarquía
+
+Cada persona tiene un **rol** (Agente, SA, GA, MGA, RGA) y un **"reporta a"**.
+El organigrama se arma solo con eso. El superior debe tener siempre un nivel más
+alto, pero **no hace falta que existan niveles intermedios**: un agente puede
+colgar directo de un GA, y un SA directo de un MGA.
+
+Se valida que nadie se reporte a sí mismo, que el superior exista y tenga rango
+mayor, y que no se formen ciclos — en el navegador y también en el Apps Script.
+Al eliminar a alguien, sus subordinados pasan a su superior.
+
+### Metas semanales
+
+Semana de lunes a domingo, identificada por su lunes. Se capturan en una tabla
+editable y se guardan todas de una vez; hay un botón para copiar la semana
+anterior. Los totales de SA, GA y MGA se **suman solos** desde sus agentes.
+
+Un agente sin meta **no cuenta como 0%**: aparece como "Sin meta" y queda fuera
+de todo promedio.
+
+### Semáforo
+
+Verde desde `SEMAFORO.verde` (90%), amarillo desde `SEMAFORO.amarillo` (60%).
+El color de una línea es el **promedio de los cumplimientos individuales** de los
+suyos, no el peor: un solo agente flojo no tiñe a todo el equipo. Aun así, el
+texto dice cuántos están por debajo, para que el problema no se esconda.
+
+No hay regla de inactividad: quien no reporta acumula poco y su % cae solo.
+
+### Contests
+
+El avance **no se captura**: se calcula leyendo los reportes diarios dentro del
+rango y el alcance del contest. Con varios requisitos se elige si hay que
+cumplirlos todos o basta con uno; con "todos", el avance mostrado es el del
+requisito peor parado, porque hasta que ese no se cumpla no hay premio.
+
+---
+
+## 8. Notas de funcionamiento
 
 - **Un registro por agente y por día.** Si un agente vuelve a guardar la misma
   fecha, el registro anterior se reemplaza en lugar de duplicarse.

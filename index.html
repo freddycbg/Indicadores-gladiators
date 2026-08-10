@@ -40,6 +40,16 @@
 
 <main class="envoltura">
 
+  <!-- Aparece solo si el Apps Script publicado es anterior a estas funciones -->
+  <div class="nota nota--bloqueada" id="avisoBackend" hidden>
+    La hoja de Google todavía no tiene las funciones de Metas y Contests.
+    Esas pestañas se verán vacías hasta que se actualice el Apps Script
+    (copiar <code>apps-script/Codigo.gs</code>, ejecutar
+    <code>sincronizarColumnas</code> y volver a implementar con versión nueva).
+    El registro diario y los reportes funcionan con normalidad.
+  </div>
+
+
   <!-- ================= PANEL: REGISTRO ================= -->
   <section class="panel is-activa" id="panel-registro" role="tabpanel">
     <div class="tarjeta">
