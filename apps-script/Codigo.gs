@@ -814,8 +814,11 @@ function sincronizarColumnas() {
   }
   if (puestos) informe.push('Se asigno el rol "' + ROL_POR_DEFECTO + '" a ' + puestos + ' agente(s) sin rol.');
 
-  SpreadsheetApp.getUi().alert(informe.join('\n'));
-  return informe;
+  // Se informa por el registro y no con getUi().alert(): un alert abre una
+  // ventana EN LA HOJA, y si la hoja no esta abierta el script se queda
+  // esperandola hasta agotar los 6 minutos de ejecucion.
+  informe.forEach(function (linea) { Logger.log(linea); });
+  return informe.join('\n');
 }
 
 /**
@@ -838,8 +841,29 @@ function instalar() {
     if (col > 0) hj.getRange(2, col, hj.getMaxRows() - 1).setNumberFormat('@');
   });
 
-  SpreadsheetApp.getUi().alert(
-    'Listo. Se crearon las hojas Agentes, Registros, Metas, Contests y Config.\n\n' +
-    'El PIN de administrador está en la hoja Config — cámbialo.'
-  );
+  var mensaje = 'Listo. Se crearon las hojas Agentes, Registros, Metas, Contests y Config. ' +
+                'El PIN de administrador esta en la hoja Config: cambialo.';
+  Logger.log(mensaje);
+  return mensaje;
+}
+
+/**
+ * Agrega un menu propio a la hoja para no tener que entrar al editor cada
+ * vez. Aparece al abrir el archivo, junto a Archivo, Editar y Ver.
+ * Desde el menu si se pueden usar dialogos: la hoja esta a la vista.
+ */
+function onOpen() {
+  SpreadsheetApp.getUi()
+    .createMenu('Gladiators')
+    .addItem('Sincronizar columnas', 'sincronizarColumnasConAviso')
+    .addItem('Instalar hojas', 'instalarConAviso')
+    .addToUi();
+}
+
+function sincronizarColumnasConAviso() {
+  SpreadsheetApp.getUi().alert(sincronizarColumnas());
+}
+
+function instalarConAviso() {
+  SpreadsheetApp.getUi().alert(instalar());
 }
