@@ -6,6 +6,112 @@
    El resto de la aplicación nunca sabe cuál de los dos está activo.
    ========================================================================= */
 
+/* =========================================================================
+   Jerarquia — utilidades puras, sin acceso a datos.
+   Se usan igual en el navegador y (traducidas) en el Apps Script.
+   ========================================================================= */
+
+const Jerarquia = {
+
+  /**
+   * Valida una relacion "reporta a". Devuelve null si es valida, o el
+   * mensaje de error si no lo es.
+   * @param {Array}  agentes  catalogo completo (con el cambio ya aplicado o no)
+   * @param {string} id       agente que se esta editando
+   * @param {string} superiorId  a quien reportaria
+   * @param {string} rol      rol que tendra el agente
+   */
+  validar(agentes, id, superiorId, rol) {
+    if (!superiorId) return null;                 // sin superior: nivel mas alto
+
+    if (superiorId === id) {
+      return 'Un agente no puede reportarse a si mismo.';
+    }
+
+    const superior = agentes.find(a => a.id === superiorId);
+    if (!superior) return 'El superior seleccionado no existe.';
+
+    if (rangoDeRol(superior.rol) <= rangoDeRol(rol)) {
+      return `${superior.nombre} es ${superior.rol || 'Agente'} y no puede ser superior de un ${rol}. ` +
+             `El superior debe tener un nivel mas alto.`;
+    }
+
+    // Recorrer hacia arriba: si volvemos al propio agente, hay un ciclo.
+    const vistos = new Set([id]);
+    let actual = superior;
+    let guarda = 0;
+    while (actual && guarda++ < 50) {
+      if (vistos.has(actual.id)) {
+        return 'Esa asignacion crea un ciclo en la jerarquia.';
+      }
+      vistos.add(actual.id);
+      actual = agentes.find(a => a.id === actual.reportaA);
+    }
+    return null;
+  },
+
+  /** Hijos directos de un agente. */
+  hijos(agentes, id) {
+    return agentes.filter(a => a.reportaA === id);
+  },
+
+  /** Todos los descendientes, a cualquier profundidad, sin incluirse. */
+  descendientes(agentes, id) {
+    const out = [];
+    const pila = [id];
+    const vistos = new Set([id]);
+    while (pila.length) {
+      // pop() va fuera del filter: dentro se evaluaria una vez por elemento
+      // y vaciaria la pila antes de tiempo.
+      const actual = pila.pop();
+      for (const h of agentes.filter(a => a.reportaA === actual)) {
+        if (vistos.has(h.id)) continue;
+        vistos.add(h.id);
+        out.push(h);
+        pila.push(h.id);
+      }
+    }
+    return out;
+  },
+
+  /** Cadena de mando hacia arriba: [superior, superior del superior, ...]. */
+  ancestros(agentes, id) {
+    const out = [];
+    const vistos = new Set([id]);
+    let actual = agentes.find(a => a.id === id);
+    let guarda = 0;
+    while (actual && actual.reportaA && guarda++ < 50) {
+      const sup = agentes.find(a => a.id === actual.reportaA);
+      if (!sup || vistos.has(sup.id)) break;
+      vistos.add(sup.id);
+      out.push(sup);
+      actual = sup;
+    }
+    return out;
+  },
+
+  /** Raices del arbol: los que no reportan a nadie existente. */
+  raices(agentes) {
+    return agentes.filter(a => !a.reportaA || !agentes.some(b => b.id === a.reportaA));
+  },
+
+  /**
+   * Aplana el arbol en orden de lectura, anotando la profundidad de cada
+   * nodo. Los agentes cuyo superior no existe cuelgan de la raiz.
+   */
+  aplanar(agentes) {
+    const orden = (a, b) => (rangoDeRol(b.rol) - rangoDeRol(a.rol)) ||
+                            a.nombre.localeCompare(b.nombre, 'es');
+    const out = [];
+    const visitar = (nodo, nivel) => {
+      out.push({ agente: nodo, nivel });
+      this.hijos(agentes, nodo.id).sort(orden).forEach(h => visitar(h, nivel + 1));
+    };
+    this.raices(agentes).sort(orden).forEach(r => visitar(r, 0));
+    return out;
+  },
+};
+
 const Store = (() => {
 
   /* =======================================================================
@@ -33,21 +139,42 @@ const Store = (() => {
   function sembrarDemo() {
     if (localStorage.getItem(LS_AGENTES)) return;
 
-    const nombres = [
-      ['Carlos Méndez',    'Alfa'],
-      ['María Fernández',  'Alfa'],
-      ['José Ramírez',     'Alfa'],
-      ['Ana Lucía Pérez',  'Bravo'],
-      ['Diego Castillo',   'Bravo'],
-      ['Sofía Morales',    'Bravo'],
-      ['Luis Enrique Gil', 'Charlie'],
-      ['Karla Súchite',    'Charlie'],
+    /* Arbol de prueba, con la misma forma del organigrama real:
+         Domenico (MGA)
+         +- Freddy (GA)
+         |  +- Yeni, Grecia, Genesis, Raul, Gabriela (SA) -> sus agentes
+         +- Marco (SA)  <- cuelga directo del MGA, sin GA de por medio  */
+    const plantilla = [
+      // [id, nombre, equipo, rol, reportaA]
+      ['a1',  'Domenico Rivas',   'Direccion', 'MGA', ''],
+      ['a2',  'Freddy Mota',      'Direccion', 'GA',  'a1'],
+      ['a3',  'Marco Aurelio',    'Independiente', 'SA', 'a1'],
+
+      ['a4',  'Yeni Alvarado',    'Alfa',    'SA', 'a2'],
+      ['a5',  'Grecia Ferrer',    'Bravo',   'SA', 'a2'],
+      ['a6',  'Genesis Lopez',    'Charlie', 'SA', 'a2'],
+      ['a7',  'Raul Contreras',   'Delta',   'SA', 'a2'],
+      ['a8',  'Gabriela Ruano',   'Echo',    'SA', 'a2'],
+
+      ['a9',  'Carlos Mendez',    'Alfa',    'Agente', 'a4'],
+      ['a10', 'Maria Fernandez',  'Alfa',    'Agente', 'a4'],
+      ['a11', 'Jose Ramirez',     'Alfa',    'Agente', 'a4'],
+      ['a12', 'Ana Lucia Perez',  'Bravo',   'Agente', 'a5'],
+      ['a13', 'Diego Castillo',   'Bravo',   'Agente', 'a5'],
+      ['a14', 'Sofia Morales',    'Charlie', 'Agente', 'a6'],
+      ['a15', 'Luis Enrique Gil', 'Charlie', 'Agente', 'a6'],
+      ['a16', 'Karla Suchite',    'Delta',   'Agente', 'a7'],
+      ['a17', 'Andres Lopez',     'Delta',   'Agente', 'a7'],
+      ['a18', 'Patricia Solis',   'Echo',    'Agente', 'a8'],
+      ['a19', 'Erick Barrios',    'Echo',    'Agente', 'a8'],
+      // Reporta directo al GA, saltando el nivel de SA
+      ['a20', 'Nadia Estrada',    'Direccion', 'Agente', 'a2'],
+      // Reporta directo al SA independiente
+      ['a21', 'Hugo Palacios',   'Independiente', 'Agente', 'a3'],
     ];
 
-    const agentes = nombres.map(([nombre, equipo], i) => ({
-      id: 'a' + (i + 1),
-      nombre,
-      equipo,
+    const agentes = plantilla.map(([id, nombre, equipo, rol, reportaA]) => ({
+      id, nombre, equipo, rol, reportaA,
       activo: true,
       creado: hoyISO(),
     }));
@@ -67,7 +194,9 @@ const Store = (() => {
       const diaSemana = new Date(fecha.replace(/-/g, '/')).getDay();
       if (diaSemana === 0) continue;                     // sin registros el domingo
 
-      for (const ag of agentes) {
+      // Solo los agentes de campo cargan reporte diario; SA/GA/MGA reciben
+      // el rollup de su linea.
+      for (const ag of agentes.filter(a => a.rol === 'Agente')) {
         if (rnd() < 0.12) continue;                      // ausencias ocasionales
 
         const app       = entre(2, 9);
@@ -101,12 +230,23 @@ const Store = (() => {
       return leerLS(LS_AGENTES, []);
     },
 
-    async crearAgente({ nombre, equipo, activo }) {
+    async crearAgente({ nombre, equipo, activo, rol, reportaA }) {
       const agentes = leerLS(LS_AGENTES, []);
       if (agentes.some(a => a.nombre.toLowerCase() === nombre.toLowerCase())) {
         throw new Error('Ya existe un agente con ese nombre.');
       }
-      const ag = { id: nuevoId(), nombre, equipo, activo: activo !== false, creado: hoyISO() };
+
+      const ag = {
+        id: nuevoId(), nombre, equipo,
+        rol: rol || ROL_POR_DEFECTO,
+        reportaA: reportaA || '',
+        activo: activo !== false,
+        creado: hoyISO(),
+      };
+
+      const error = Jerarquia.validar([...agentes, ag], ag.id, ag.reportaA, ag.rol);
+      if (error) throw new Error(error);
+
       agentes.push(ag);
       escribirLS(LS_AGENTES, agentes);
       return ag;
@@ -122,7 +262,24 @@ const Store = (() => {
         throw new Error('Ya existe otro agente con ese nombre.');
       }
 
-      agentes[i] = { ...agentes[i], ...cambios };
+      const propuesto = { ...agentes[i], ...cambios };
+      const conCambio = agentes.map((a, j) => (j === i ? propuesto : a));
+      const error = Jerarquia.validar(conCambio, id, propuesto.reportaA, propuesto.rol);
+      if (error) throw new Error(error);
+
+      // Al bajar de rango, quienes le reportaban quedarian mal colgados.
+      if (cambios.rol && cambios.rol !== agentes[i].rol) {
+        const malColgados = conCambio.filter(
+          a => a.reportaA === id && rangoDeRol(a.rol) >= rangoDeRol(propuesto.rol));
+        if (malColgados.length) {
+          throw new Error(
+            `No se puede cambiar el rol a ${propuesto.rol}: ` +
+            `${malColgados.map(a => a.nombre).join(', ')} le reporta(n) y tiene(n) ` +
+            `un nivel igual o mayor. Reasignalos primero.`);
+        }
+      }
+
+      agentes[i] = propuesto;
       escribirLS(LS_AGENTES, agentes);
 
       // Mantener sincronizado el nombre desnormalizado en los registros
@@ -135,7 +292,15 @@ const Store = (() => {
     },
 
     async eliminarAgente(id, { borrarRegistros = false } = {}) {
-      const agentes = leerLS(LS_AGENTES, []).filter(a => a.id !== id);
+      const todos = leerLS(LS_AGENTES, []);
+      const saliente = todos.find(a => a.id === id);
+
+      // Quienes le reportaban pasan a su superior, para que no queden
+      // sueltos fuera del arbol.
+      const agentes = todos
+        .filter(a => a.id !== id)
+        .map(a => (a.reportaA === id ? { ...a, reportaA: saliente ? saliente.reportaA : '' } : a));
+
       escribirLS(LS_AGENTES, agentes);
       if (borrarRegistros) {
         escribirLS(LS_REGISTROS, leerLS(LS_REGISTROS, []).filter(r => r.agenteId !== id));
@@ -227,15 +392,25 @@ const Store = (() => {
 
   /* =======================================================================
      Selección de backend
+
+     Desde localhost manda CONFIG.MODO_LOCALHOST: la página de pruebas
+     trabaja con datos ficticios y nunca escribe en la hoja real.
      ======================================================================= */
 
-  if (CONFIG.MODO === 'demo') sembrarDemo();
+  const enLocalhost = ['localhost', '127.0.0.1', '::1', ''].includes(location.hostname);
+  const MODO_EFECTIVO = (enLocalhost && CONFIG.MODO_LOCALHOST)
+    ? CONFIG.MODO_LOCALHOST
+    : CONFIG.MODO;
 
-  const backend = CONFIG.MODO === 'sheets' ? sheets : demo;
+  if (MODO_EFECTIVO === 'demo') sembrarDemo();
+
+  const backend = MODO_EFECTIVO === 'sheets' ? sheets : demo;
 
   return {
     ...backend,
-    esDemo: CONFIG.MODO === 'demo',
+    esDemo: MODO_EFECTIVO === 'demo',
+    modo: MODO_EFECTIVO,
+    esPaginaDePrueba: enLocalhost && CONFIG.MODO_LOCALHOST === 'demo',
   };
 })();
 

@@ -685,19 +685,21 @@ function iniciarAgentes() {
 
   $('#formAgente').addEventListener('submit', async e => {
     e.preventDefault();
-    const id     = $('#ag_id').value;
-    const nombre = $('#ag_nombre').value.trim();
-    const equipo = $('#ag_equipo').value.trim();
-    const activo = $('#ag_activo').checked;
+    const id       = $('#ag_id').value;
+    const nombre   = $('#ag_nombre').value.trim();
+    const equipo   = $('#ag_equipo').value.trim();
+    const activo   = $('#ag_activo').checked;
+    const rol      = $('#ag_rol').value;
+    const reportaA = $('#ag_reportaA').value;
 
     if (!nombre) return aviso('El nombre del agente es obligatorio.', 'error');
 
     try {
       if (id) {
-        await Store.actualizarAgente(id, { nombre, equipo, activo });
+        await Store.actualizarAgente(id, { nombre, equipo, activo, rol, reportaA });
         aviso('Agente actualizado.');
       } else {
-        await Store.crearAgente({ nombre, equipo, activo });
+        await Store.crearAgente({ nombre, equipo, activo, rol, reportaA });
         aviso('Agente creado.');
       }
       $('#dlgAgente').close();
@@ -715,8 +717,59 @@ function abrirDlgAgente(agente) {
   $('#ag_nombre').value = agente ? agente.nombre : '';
   $('#ag_equipo').value = agente ? (agente.equipo || '') : '';
   $('#ag_activo').checked = agente ? agente.activo !== false : true;
+
+  // Rol
+  const selRol = $('#ag_rol');
+  selRol.innerHTML = '';
+  ROLES.forEach(r => selRol.appendChild(el('option', { value: r.key, text: r.label })));
+  selRol.value = (agente && agente.rol) || ROL_POR_DEFECTO;
+
+  llenarSelectSuperior(agente);
+  selRol.onchange = () => llenarSelectSuperior(agente, true);
+
   $('#dlgAgente').showModal();
   $('#ag_nombre').focus();
+}
+
+/**
+ * Llena "Reporta a" solo con candidatos validos: nivel estrictamente mayor,
+ * y que no generen un ciclo. Asi el error se evita antes de guardar en vez
+ * de rechazarlo despues.
+ */
+function llenarSelectSuperior(agente, conservar = false) {
+  const sel = $('#ag_reportaA');
+  const previo = conservar ? sel.value : (agente ? (agente.reportaA || '') : '');
+  const rol = $('#ag_rol').value;
+  const id  = agente ? agente.id : '__nuevo__';
+
+  // Para validar un agente aun no creado, lo agregamos temporalmente.
+  const universo = agente
+    ? App.agentes
+    : [...App.agentes, { id, nombre: '', rol, reportaA: '' }];
+
+  const candidatos = App.agentes
+    .filter(a => a.id !== id)
+    .filter(a => !Jerarquia.validar(universo, id, a.id, rol))
+    .sort((x, y) => (rangoDeRol(y.rol) - rangoDeRol(x.rol)) ||
+                    x.nombre.localeCompare(y.nombre, 'es'));
+
+  sel.innerHTML = '';
+  sel.appendChild(el('option', { value: '', text: '— Nadie (nivel más alto) —' }));
+  candidatos.forEach(a => sel.appendChild(el('option', {
+    value: a.id,
+    text: `${a.nombre} · ${a.rol || 'Agente'}`,
+  })));
+
+  sel.value = candidatos.some(a => a.id === previo) ? previo : '';
+
+  const ayuda = $('#ag_reportaAyuda');
+  if (!candidatos.length) {
+    ayuda.textContent = `No hay nadie con nivel superior a ${rol}. ` +
+                        `Este agente quedará en la cima del organigrama.`;
+  } else {
+    ayuda.textContent = 'Solo puede reportar a alguien de un nivel más alto. ' +
+                        'Déjalo vacío si es el nivel más alto de la organización.';
+  }
 }
 
 async function refrescarPanelAgentes() {
@@ -741,6 +794,8 @@ async function refrescarPanelAgentes() {
   $('#conteoAgentes').textContent =
     `${App.agentes.length} agente(s) · ${activos} activo(s) · ${App.agentes.length - activos} inactivo(s)`;
 
+  pintarOrganigrama(conteoPorAgente);
+
   const tabla = $('#tablaAgentes');
   tabla.innerHTML = '';
 
@@ -754,6 +809,8 @@ async function refrescarPanelAgentes() {
   tabla.appendChild(el('thead', {}, [
     el('tr', {}, [
       el('th', { text: 'Agente' }),
+      el('th', { text: 'Rol' }),
+      el('th', { text: 'Reporta a' }),
       el('th', { text: 'Equipo' }),
       el('th', { text: 'Estado' }),
       el('th', { class: 'num', text: 'Registros' }),
@@ -761,11 +818,17 @@ async function refrescarPanelAgentes() {
     ]),
   ]));
 
+  const nombrePorId = Object.fromEntries(App.agentes.map(a => [a.id, a.nombre]));
   const filas = [...App.agentes].sort((a, b) => a.nombre.localeCompare(b.nombre, 'es'));
 
   tabla.appendChild(el('tbody', {}, filas.map(a =>
     el('tr', {}, [
       el('td', { text: a.nombre }),
+      el('td', {}, [el('span', { class: 'marca-rol', text: a.rol || 'Agente' })]),
+      el('td', {
+        class: a.reportaA ? '' : 'cero',
+        text: a.reportaA ? (nombrePorId[a.reportaA] || 'Superior eliminado') : '—',
+      }),
       el('td', { text: a.equipo || '—' }),
       el('td', {}, [
         el('span', {
@@ -798,12 +861,69 @@ async function refrescarPanelAgentes() {
   )));
 }
 
+/** Dibuja el arbol completo a partir de las relaciones "reporta a". */
+function pintarOrganigrama(conteoPorAgente = {}) {
+  const cont = $('#organigrama');
+  cont.innerHTML = '';
+
+  if (!App.agentes.length) {
+    cont.appendChild(el('p', { class: 'vacio', text: 'No hay agentes cargados.' }));
+    return;
+  }
+
+  const lista = el('ul', { class: 'arbol' });
+
+  Jerarquia.aplanar(App.agentes).forEach(({ agente, nivel }) => {
+    const bajoSuLinea = Jerarquia.descendientes(App.agentes, agente.id);
+    const deCampo = bajoSuLinea.filter(a => a.rol === 'Agente').length;
+
+    lista.appendChild(el('li', {
+      class: 'arbol-fila' + (agente.activo === false ? ' arbol-fila--inactivo' : ''),
+      style: `--nivel:${nivel}`,
+    }, [
+      el('span', { class: 'arbol-guia', 'aria-hidden': 'true' }),
+      el('span', { class: 'marca-rol', text: agente.rol || 'Agente' }),
+      el('span', { class: 'arbol-nombre', text: agente.nombre }),
+      agente.equipo ? el('span', { class: 'arbol-equipo', text: agente.equipo }) : null,
+      deCampo
+        ? el('span', { class: 'arbol-conteo', text: `${deCampo} agente(s)` })
+        : el('span', {
+            class: 'arbol-conteo',
+            text: `${conteoPorAgente[agente.id] || 0} registro(s)`,
+          }),
+      agente.activo === false ? el('span', { class: 'arbol-inactivo', text: 'inactivo' }) : null,
+    ]));
+  });
+
+  cont.appendChild(lista);
+
+  const huerfanos = App.agentes.filter(
+    a => a.reportaA && !App.agentes.some(b => b.id === a.reportaA));
+  if (huerfanos.length) {
+    cont.appendChild(el('p', {
+      class: 'ayuda',
+      text: `${huerfanos.length} persona(s) apuntan a un superior que ya no existe ` +
+            `y aparecen en la raíz: ${huerfanos.map(a => a.nombre).join(', ')}.`,
+    }));
+  }
+}
+
 async function eliminarAgente(agente, numRegistros) {
+  const aCargo = Jerarquia.hijos(App.agentes, agente.id);
+  const superior = App.agentes.find(a => a.id === agente.reportaA);
+
+  let texto = numRegistros
+    ? `Este agente tiene ${numRegistros} registro(s) históricos. Si no marcas la casilla, los registros se conservan para las estadísticas y solo se elimina al agente del catálogo.`
+    : 'El agente se eliminará del catálogo. No tiene registros históricos.';
+
+  if (aCargo.length) {
+    texto += ` Además, ${aCargo.length} persona(s) le reportan y pasarán a ` +
+             (superior ? `${superior.nombre}.` : 'la raíz del organigrama.');
+  }
+
   const ok = await confirmar({
     titulo: `Eliminar a ${agente.nombre}`,
-    texto: numRegistros
-      ? `Este agente tiene ${numRegistros} registro(s) históricos. Si no marcas la casilla, los registros se conservan para las estadísticas y solo se elimina al agente del catálogo.`
-      : 'El agente se eliminará del catálogo. No tiene registros históricos.',
+    texto,
     etiquetaOk: 'Eliminar',
     conExtra: numRegistros > 0,
   });
@@ -862,9 +982,12 @@ async function iniciar() {
 
   $('#marcaEquipo').textContent = CONFIG.EQUIPO;
   $('#pastillaModo').hidden = !Store.esDemo;
-  $('#pieModo').textContent = Store.esDemo
-    ? 'Modo de prueba — los datos se guardan solo en este navegador. Cambia CONFIG.MODO a "sheets" en assets/js/config.js para conectar Google Sheets.'
-    : 'Conectado a Google Sheets.';
+  $('#pastillaModo').textContent = Store.esPaginaDePrueba ? 'Página de prueba' : 'Datos de prueba';
+  $('#pieModo').textContent = Store.esPaginaDePrueba
+    ? 'Página de prueba en localhost — datos ficticios guardados solo en este navegador. La página publicada sigue conectada a Google Sheets y no se ve afectada.'
+    : Store.esDemo
+      ? 'Modo de prueba — los datos se guardan solo en este navegador.'
+      : 'Conectado a Google Sheets.';
 
   try {
     await cargarAgentes();

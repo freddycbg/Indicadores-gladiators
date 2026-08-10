@@ -13,6 +13,15 @@ const CONFIG = {
      ----------------------------------------------------------------------- */
   MODO: 'sheets',
 
+  /* -----------------------------------------------------------------------
+     MODO AL ABRIR DESDE LOCALHOST
+     Cuando la pagina se sirve desde localhost (el servidor de pruebas), se
+     usa este modo en lugar del de arriba. Asi la pagina de prueba trabaja
+     con datos ficticios y nunca escribe en la hoja real.
+     Ponlo en null para que localhost use tambien Google Sheets.
+     ----------------------------------------------------------------------- */
+  MODO_LOCALHOST: 'demo',
+
   // URL del Web App de Google Apps Script (termina en /exec)
   // Ejemplo: https://script.google.com/macros/s/AKfycb.../exec
   SHEETS_URL: 'https://script.google.com/macros/s/AKfycbxSzZnXbgZ5NKFqt4uRMIsmocK_BaeOJE79lQhzexpEjF1rWoyypHEZNFchRzu4De5S/exec',
@@ -36,6 +45,28 @@ const CONFIG = {
      ----------------------------------------------------------------------- */
   DIAS_EDICION_LIBRE: 7,
 };
+
+/* =========================================================================
+   JERARQUIA DE EQUIPO
+   El rango define quien puede ser superior de quien: el "reporta a" debe
+   tener siempre un rango estrictamente mayor. El arbol se arma solo a
+   partir de esas relaciones.
+   ========================================================================= */
+const ROLES = [
+  { key: 'Agente', label: 'Agente', rango: 0 },
+  { key: 'SA',     label: 'SA',     rango: 1 },
+  { key: 'GA',     label: 'GA',     rango: 2 },
+  { key: 'MGA',    label: 'MGA',    rango: 3 },
+  { key: 'RGA',    label: 'RGA',    rango: 4 },
+];
+
+const ROL_POR_DEFECTO = 'Agente';
+
+/** Rango numerico de un rol; -1 si el rol no existe. */
+function rangoDeRol(rol) {
+  const r = ROLES.find(x => x.key === rol);
+  return r ? r.rango : -1;
+}
 
 /* =========================================================================
    CAMPOS DEL REPORTE DIARIO — fuente única de verdad

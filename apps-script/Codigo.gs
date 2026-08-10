@@ -18,7 +18,17 @@ var HOJA_AGENTES   = 'Agentes';
 var HOJA_REGISTROS = 'Registros';
 var HOJA_CONFIG    = 'Config';
 
-var COL_AGENTES = ['id', 'nombre', 'equipo', 'activo', 'creado'];
+var COL_AGENTES = ['id', 'nombre', 'equipo', 'rol', 'reportaA', 'activo', 'creado'];
+
+/* Jerarquia: el "reporta a" debe tener siempre un rango mayor.
+   Debe coincidir con ROLES en assets/js/config.js. */
+var RANGOS = { 'Agente': 0, 'SA': 1, 'GA': 2, 'MGA': 3, 'RGA': 4 };
+var ROL_POR_DEFECTO = 'Agente';
+
+function rangoDeRol(rol) {
+  var r = RANGOS[String(rol || ROL_POR_DEFECTO)];
+  return r === undefined ? -1 : r;
+}
 
 var COL_REGISTROS = [
   'id', 'fecha', 'agenteId', 'agenteNombre',
@@ -224,13 +234,54 @@ function esPinValido(pin) {
 function listarAgentes() {
   return leerTodo(HOJA_AGENTES, COL_AGENTES).map(function (a) {
     return {
-      id:     String(a.id),
-      nombre: String(a.nombre),
-      equipo: String(a.equipo || ''),
-      activo: esVerdadero(a.activo),
-      creado: aFechaISO(a.creado),
+      id:       String(a.id),
+      nombre:   String(a.nombre),
+      equipo:   String(a.equipo || ''),
+      rol:      String(a.rol || ROL_POR_DEFECTO),
+      reportaA: String(a.reportaA || ''),
+      activo:   esVerdadero(a.activo),
+      creado:   aFechaISO(a.creado),
     };
   });
+}
+
+/**
+ * Valida una relacion "reporta a". Devuelve null si es valida o el mensaje
+ * de error si no. Se valida aqui y no solo en el navegador porque el
+ * navegador no es confiable.
+ */
+function validarJerarquia(agentes, id, superiorId, rol) {
+  if (!superiorId) return null;
+  if (String(superiorId) === String(id)) {
+    return 'Un agente no puede reportarse a si mismo.';
+  }
+
+  var superior = null;
+  for (var i = 0; i < agentes.length; i++) {
+    if (String(agentes[i].id) === String(superiorId)) superior = agentes[i];
+  }
+  if (!superior) return 'El superior seleccionado no existe.';
+
+  if (rangoDeRol(superior.rol) <= rangoDeRol(rol)) {
+    return superior.nombre + ' es ' + (superior.rol || ROL_POR_DEFECTO) +
+           ' y no puede ser superior de un ' + rol + '.';
+  }
+
+  // Recorrer hacia arriba buscando un ciclo
+  var vistos = {};
+  vistos[String(id)] = true;
+  var actual = superior;
+  var guarda = 0;
+  while (actual && guarda++ < 50) {
+    if (vistos[String(actual.id)]) return 'Esa asignacion crea un ciclo en la jerarquia.';
+    vistos[String(actual.id)] = true;
+    var siguiente = null;
+    for (var j = 0; j < agentes.length; j++) {
+      if (String(agentes[j].id) === String(actual.reportaA)) siguiente = agentes[j];
+    }
+    actual = siguiente;
+  }
+  return null;
 }
 
 function crearAgente(agente) {
@@ -250,9 +301,15 @@ function crearAgente(agente) {
       id: nuevoId(),
       nombre: nombre,
       equipo: String(agente.equipo || '').trim(),
+      rol: String(agente.rol || ROL_POR_DEFECTO),
+      reportaA: String(agente.reportaA || ''),
       activo: agente.activo !== false,
       creado: aFechaISO(new Date()),
     };
+
+    var error = validarJerarquia(existentes.concat([nuevo]), nuevo.id, nuevo.reportaA, nuevo.rol);
+    if (error) throw new Error(error);
+
     hj.appendRow(aFila(nuevo, encabezados(hj)));
     return nuevo;
   });
@@ -285,8 +342,33 @@ function actualizarAgente(id, cambios) {
     var fila = {};
     for (var c = 0; c < cols.length; c++) fila[cols[c]] = objetivo[cols[c]];
     fila.nombre = nombreNuevo;
-    if (cambios.equipo !== undefined) fila.equipo = String(cambios.equipo).trim();
-    if (cambios.activo !== undefined) fila.activo = cambios.activo === true;
+    if (cambios.equipo   !== undefined) fila.equipo   = String(cambios.equipo).trim();
+    if (cambios.activo   !== undefined) fila.activo   = cambios.activo === true;
+    if (cambios.rol      !== undefined) fila.rol      = String(cambios.rol || ROL_POR_DEFECTO);
+    if (cambios.reportaA !== undefined) fila.reportaA = String(cambios.reportaA || '');
+
+    // Validar contra el catalogo con el cambio ya aplicado
+    var propuestos = agentes.map(function (a) {
+      return String(a.id) === String(id)
+        ? { id: a.id, nombre: fila.nombre, rol: fila.rol, reportaA: fila.reportaA }
+        : a;
+    });
+    var errJ = validarJerarquia(propuestos, id, fila.reportaA, fila.rol);
+    if (errJ) throw new Error(errJ);
+
+    // Al bajar de rango, quienes le reportan quedarian mal colgados
+    var malColgados = [];
+    for (var m = 0; m < propuestos.length; m++) {
+      if (String(propuestos[m].reportaA) === String(id) &&
+          String(propuestos[m].id) !== String(id) &&
+          rangoDeRol(propuestos[m].rol) >= rangoDeRol(fila.rol)) {
+        malColgados.push(propuestos[m].nombre);
+      }
+    }
+    if (malColgados.length) {
+      throw new Error('No se puede cambiar el rol a ' + fila.rol + ': ' +
+        malColgados.join(', ') + ' le reporta(n) con nivel igual o mayor. Reasignalos primero.');
+    }
 
     hj.getRange(objetivo._fila, 1, 1, cols.length).setValues([aFila(fila, cols)]);
 
@@ -307,7 +389,10 @@ function actualizarAgente(id, cambios) {
 
     return {
       id: String(fila.id), nombre: fila.nombre,
-      equipo: String(fila.equipo || ''), activo: esVerdadero(fila.activo),
+      equipo: String(fila.equipo || ''),
+      rol: String(fila.rol || ROL_POR_DEFECTO),
+      reportaA: String(fila.reportaA || ''),
+      activo: esVerdadero(fila.activo),
       creado: aFechaISO(fila.creado),
     };
   });
@@ -316,7 +401,25 @@ function actualizarAgente(id, cambios) {
 function eliminarAgente(id, borrarRegistros) {
   return conBloqueo(function () {
     var hj = hoja(HOJA_AGENTES, COL_AGENTES);
+    var cols = encabezados(hj);
     var agentes = leerTodo(HOJA_AGENTES, COL_AGENTES);
+
+    // Quienes le reportaban pasan a su superior, para no quedar sueltos
+    var saliente = null;
+    for (var s = 0; s < agentes.length; s++) {
+      if (String(agentes[s].id) === String(id)) saliente = agentes[s];
+    }
+    if (saliente) {
+      var colReporta = cols.indexOf('reportaA') + 1;
+      if (colReporta > 0) {
+        for (var h = 0; h < agentes.length; h++) {
+          if (String(agentes[h].reportaA) === String(id)) {
+            hj.getRange(agentes[h]._fila, colReporta)
+              .setValue(String(saliente.reportaA || ''));
+          }
+        }
+      }
+    }
 
     for (var i = 0; i < agentes.length; i++) {
       if (String(agentes[i].id) === String(id)) {
@@ -457,26 +560,43 @@ function eliminarRegistro(id, pin) {
  * No mueve ni borra columnas: solo añade al final las que falten.
  */
 function sincronizarColumnas() {
-  var hr = hoja(HOJA_REGISTROS, COL_REGISTROS);
-  var actuales = encabezados(hr);
-  var agregadas = [];
+  var informe = [];
 
-  for (var i = 0; i < COL_REGISTROS.length; i++) {
-    if (actuales.indexOf(COL_REGISTROS[i]) < 0) {
-      hr.getRange(1, actuales.length + agregadas.length + 1)
-        .setValue(COL_REGISTROS[i])
-        .setFontWeight('bold');
-      agregadas.push(COL_REGISTROS[i]);
+  [[HOJA_REGISTROS, COL_REGISTROS], [HOJA_AGENTES, COL_AGENTES]].forEach(function (par) {
+    var hj = hoja(par[0], par[1]);
+    var actuales = encabezados(hj);
+    var agregadas = [];
+
+    for (var i = 0; i < par[1].length; i++) {
+      if (actuales.indexOf(par[1][i]) < 0) {
+        hj.getRange(1, actuales.length + agregadas.length + 1)
+          .setValue(par[1][i])
+          .setFontWeight('bold');
+        agregadas.push(par[1][i]);
+      }
     }
+    informe.push(agregadas.length
+      ? '"' + par[0] + '": se agrego ' + agregadas.join(', ')
+      : '"' + par[0] + '": sin cambios');
+  });
+
+  // Los agentes que ya existian no tienen rol: se les pone el de por defecto
+  var ha = hoja(HOJA_AGENTES, COL_AGENTES);
+  var colsA = encabezados(ha);
+  var colRol = colsA.indexOf('rol') + 1;
+  var puestos = 0;
+  if (colRol > 0 && ha.getLastRow() > 1) {
+    var rango = ha.getRange(2, colRol, ha.getLastRow() - 1, 1);
+    var vals = rango.getValues();
+    for (var r = 0; r < vals.length; r++) {
+      if (String(vals[r][0]).trim() === '') { vals[r][0] = ROL_POR_DEFECTO; puestos++; }
+    }
+    if (puestos) rango.setValues(vals);
   }
+  if (puestos) informe.push('Se asigno el rol "' + ROL_POR_DEFECTO + '" a ' + puestos + ' agente(s) sin rol.');
 
-  var mensaje = agregadas.length
-    ? 'Columnas agregadas a "Registros": ' + agregadas.join(', ') +
-      '\n\nLas filas anteriores quedan vacías en esas columnas; la aplicación las lee como 0.'
-    : 'La hoja "Registros" ya tiene todas las columnas. No hubo cambios.';
-
-  SpreadsheetApp.getUi().alert(mensaje);
-  return agregadas;
+  SpreadsheetApp.getUi().alert(informe.join('\n'));
+  return informe;
 }
 
 /**

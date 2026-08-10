@@ -214,6 +214,17 @@
         </div>
       </div>
 
+      <div class="tarjeta">
+        <div class="tarjeta-cab">
+          <h2>Organigrama</h2>
+          <p class="ayuda">
+            Se arma solo a partir del campo "Reporta a" de cada persona.
+            Entre paréntesis, cuántos agentes cuelgan de esa línea en total.
+          </p>
+        </div>
+        <div id="organigrama"></div>
+      </div>
+
       <div class="tarjeta" id="zonaPeligro">
         <div class="tarjeta-cab">
           <h2>Datos de prueba</h2>
@@ -240,6 +251,18 @@
     <div class="campo">
       <label for="ag_equipo">Equipo</label>
       <input type="text" id="ag_equipo" autocomplete="off" placeholder="Ej. Alfa">
+    </div>
+    <div class="campo">
+      <label for="ag_rol">Rol <span class="req">*</span></label>
+      <select id="ag_rol" required></select>
+    </div>
+    <div class="campo">
+      <label for="ag_reportaA">Reporta a</label>
+      <select id="ag_reportaA"></select>
+      <p class="ayuda" id="ag_reportaAyuda">
+        Solo puede reportar a alguien de un nivel más alto. Déjalo vacío si es
+        el nivel más alto de la organización.
+      </p>
     </div>
     <div class="campo campo--check">
       <label><input type="checkbox" id="ag_activo" checked> Agente activo</label>

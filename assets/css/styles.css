@@ -653,6 +653,79 @@ input:invalid:not(:placeholder-shown) { border-color: var(--critico); }
 .marca-estado--on  { background: var(--acento-lavado); color: var(--acento-alto); }
 .marca-estado--off { background: var(--superficie-2);  color: var(--tinta-3); }
 
+/* ---------- Roles y organigrama ----------------------------------------- */
+
+.marca-rol {
+  display: inline-block;
+  min-width: 54px;
+  text-align: center;
+  font-size: .68rem;
+  font-weight: 700;
+  letter-spacing: .05em;
+  padding: 3px 8px;
+  border-radius: 999px;
+  background: var(--acento-lavado);
+  color: var(--acento-alto);
+  border: 1px solid var(--borde);
+  flex: none;
+}
+
+.arbol { list-style: none; margin: 0; padding: 0; }
+
+/* La sangría por nivel es la que comunica la jerarquía; el resto de la
+   fila se mantiene alineado para poder leerla en columna. */
+.arbol-fila {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 7px 0 7px calc(var(--nivel) * 26px);
+  border-bottom: 1px solid var(--borde);
+  font-size: .88rem;
+}
+.arbol-fila:last-child { border-bottom: 0; }
+.arbol-fila--inactivo { opacity: .55; }
+
+.arbol-guia {
+  width: 12px;
+  flex: none;
+  border-left: 1px solid var(--borde-fuerte);
+  border-bottom: 1px solid var(--borde-fuerte);
+  height: 12px;
+  margin-bottom: 6px;
+  border-bottom-left-radius: 4px;
+}
+.arbol-fila[style*="--nivel:0"] .arbol-guia { visibility: hidden; }
+
+.arbol-nombre { font-weight: 500; }
+
+.arbol-equipo {
+  font-size: .76rem;
+  color: var(--tinta-3);
+  padding: 2px 7px;
+  border-radius: 999px;
+  background: var(--superficie-2);
+}
+
+.arbol-conteo {
+  margin-left: auto;
+  font-size: .78rem;
+  color: var(--tinta-3);
+  white-space: nowrap;
+}
+
+.arbol-inactivo {
+  font-size: .72rem;
+  text-transform: uppercase;
+  letter-spacing: .04em;
+  color: var(--tinta-3);
+}
+
+@media (max-width: 560px) {
+  .arbol-fila { flex-wrap: wrap; gap: 6px; padding-left: calc(var(--nivel) * 16px); }
+  .arbol-conteo { margin-left: 0; width: 100%; }
+  .arbol-equipo { display: none; }
+}
+
 /* ---------- Diálogos ---------------------------------------------------- */
 
 .dialogo {
