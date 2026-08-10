@@ -117,6 +117,12 @@
 
 * { box-sizing: border-box; }
 
+/* El display:none que el navegador da a [hidden] lo pisa cualquier regla
+   de clase con display propio (.nota, .campo, .tarjeta-acc son flex), y el
+   elemento se veia aunque estuviera marcado como oculto. Esta regla
+   devuelve a [hidden] la ultima palabra. */
+[hidden] { display: none !important; }
+
 body {
   margin: 0;
   background: var(--plano);
