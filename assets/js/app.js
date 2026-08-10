@@ -365,6 +365,7 @@ async function refrescarStats() {
 
   App.registrosStats = await Store.listarRegistros({ desde, hasta, agenteId });
 
+  await refrescarComparativa();
   pintarKPIs();
   pintarGraficas();
   pintarTasas();
@@ -638,6 +639,148 @@ function exportarCSV() {
 }
 
 /* =========================================================================
+   COMPARATIVA SEMANAL
+   Siempre semana en curso (lunes a domingo) contra la inmediata anterior,
+   al margen del rango elegido arriba: comparar "los ultimos 30 dias contra
+   la semana pasada" no querria decir nada.
+   ========================================================================= */
+
+const LS_LINEA_VISTA = 'gt_linea_vista';
+
+function iniciarComparativa() {
+  $('#c_linea').addEventListener('change', e => {
+    localStorage.setItem(LS_LINEA_VISTA, e.target.value);
+    refrescarComparativa();
+  });
+}
+
+/** Suma los indicadores de la comparativa sobre un conjunto de registros. */
+function totalesComparativa(registros) {
+  const t = { alp: 0, app: 0, referidos: 0, noShow: 0 };
+  for (const r of registros) {
+    t.alp       += Number(r.alp) || 0;
+    t.app       += Number(r.app) || 0;
+    t.referidos += Number(r.referidos) || 0;
+    t.noShow    += Number(r.noShow) || 0;
+  }
+  // Sin citas no hay tasa que reportar: null, no cero.
+  t.tasaNoShow = t.app ? (t.noShow / t.app) * 100 : null;
+  return t;
+}
+
+async function refrescarComparativa() {
+  const sel = $('#c_linea');
+  llenarSelectJerarquia(sel);
+
+  // Restaurar la ultima seleccion de este dispositivo
+  const guardada = localStorage.getItem(LS_LINEA_VISTA);
+  if (guardada && [...sel.options].some(o => o.value === guardada) && !sel.value) {
+    sel.value = guardada;
+  }
+
+  const estaSemana = semanaActual();
+  const anterior   = sumarDias(estaSemana, -7);
+  const alcance    = alcanceDe(sel.value);
+
+  const filtrar = regs => alcance ? regs.filter(r => alcance.has(r.agenteId)) : regs;
+
+  const [regsAhora, regsAntes] = await Promise.all([
+    Store.listarRegistros({ desde: estaSemana, hasta: domingoDeLaSemana(estaSemana) }),
+    Store.listarRegistros({ desde: anterior,   hasta: domingoDeLaSemana(anterior) }),
+  ]);
+
+  const ahora = totalesComparativa(filtrar(regsAhora));
+  const antes = totalesComparativa(filtrar(regsAntes));
+
+  $('#comparativaAyuda').textContent =
+    `${etiquetaSemana(estaSemana)} contra ${etiquetaSemana(anterior)}. ` +
+    `No depende de los filtros de arriba.`;
+
+  // Cuanta gente hay realmente detras de estos numeros
+  const persona = App.agentes.find(a => a.id === sel.value);
+  const enAlcance = alcance
+    ? App.agentes.filter(a => alcance.has(a.id) && a.rol === 'Agente' && a.activo !== false).length
+    : App.agentes.filter(a => a.rol === 'Agente' && a.activo !== false).length;
+  const reportaron = new Set(filtrar(regsAhora).map(r => r.agenteId)).size;
+
+  $('#comparativaAlcance').textContent = persona && persona.rol === 'Agente'
+    ? `Datos individuales de ${persona.nombre}.`
+    : `${persona ? `Línea de ${persona.nombre} (${persona.rol})` : 'Toda la organización'}: ` +
+      `${enAlcance} agente(s) de campo, ${reportaron} con reporte esta semana.`;
+
+  pintarComparativa(ahora, antes);
+}
+
+function pintarComparativa(ahora, antes) {
+  const cont = $('#comparativa');
+  cont.innerHTML = '';
+
+  COMPARATIVA_CAMPOS.forEach(c => {
+    const act = ahora[c.key];
+    const ant = antes[c.key];
+    cont.appendChild(tarjetaComparativa(c, act, ant));
+  });
+}
+
+function tarjetaComparativa(campo, actual, anterior) {
+  const hayActual   = actual   !== null && actual   !== undefined;
+  const hayAnterior = anterior !== null && anterior !== undefined;
+
+  const valorTexto = !hayActual ? '—'
+    : campo.tipo === 'porcentaje' ? actual.toFixed(1) + '%'
+    : fmt(actual, campo.tipo);
+
+  const antTexto = !hayAnterior ? '—'
+    : campo.tipo === 'porcentaje' ? anterior.toFixed(1) + '%'
+    : fmt(anterior, campo.tipo);
+
+  return el('div', { class: 'comp-tarjeta' }, [
+    el('div', { class: 'kpi-etq', text: campo.label }),
+    el('div', { class: 'kpi-val', text: valorTexto }),
+    delta(campo, actual, anterior, hayActual, hayAnterior),
+    el('div', { class: 'comp-antes', text: `Semana pasada: ${antTexto}` }),
+  ]);
+}
+
+/**
+ * Variacion contra la semana pasada. El color nunca va solo: siempre lo
+ * acompana una flecha y el signo, para que se entienda sin distinguir
+ * colores y al imprimir en blanco y negro.
+ */
+function delta(campo, actual, anterior, hayActual, hayAnterior) {
+  if (!hayActual || !hayAnterior) {
+    return el('div', { class: 'comp-delta comp-delta--neutro', text: 'Sin base de comparación' });
+  }
+
+  const dif = actual - anterior;
+
+  if (Math.abs(dif) < 1e-9) {
+    return el('div', { class: 'comp-delta comp-delta--neutro', text: '→ Sin cambio' });
+  }
+
+  const subio = dif > 0;
+  const bueno = campo.mejor === 'bajo' ? !subio : subio;
+  const flecha = subio ? '↑' : '↓';
+
+  const absTexto = campo.tipo === 'porcentaje'
+    ? Math.abs(dif).toFixed(1) + ' pts'
+    : fmt(Math.abs(dif), campo.tipo);
+
+  // Desde cero no hay porcentaje que calcular: se informa el absoluto.
+  const pctTexto = anterior === 0
+    ? ''
+    : ` · ${Math.abs((dif / anterior) * 100).toFixed(0)}%`;
+
+  return el('div', {
+    class: 'comp-delta ' + (bueno ? 'comp-delta--bien' : 'comp-delta--mal'),
+    title: campo.mejor === 'bajo'
+      ? 'En este indicador, bajar es mejor.'
+      : 'En este indicador, subir es mejor.',
+    text: `${flecha} ${subio ? '+' : '−'}${absTexto}${pctTexto}`,
+  });
+}
+
+/* =========================================================================
    PANEL METAS
    La captura es una tabla editable: fijar 30+ metas de una en una en un
    dialogo seria impracticable. Los cambios quedan en memoria hasta que se
@@ -680,22 +823,41 @@ function confirmarDescarte() {
   return ok;
 }
 
-/** Personas que pueden encabezar una línea (todo lo que no sea Agente). */
-function llenarSelectLinea(select) {
+/**
+ * Llena un desplegable con el organigrama sangrado. Con soloLideres solo
+ * aparecen quienes encabezan una linea; si no, tambien los agentes, que
+ * es lo que permite ver la comparativa a nivel individual.
+ */
+function llenarSelectJerarquia(select, { soloLideres = false, textoTodos = 'Toda la organización' } = {}) {
   const previo = select.value;
   select.innerHTML = '';
-  select.appendChild(el('option', { value: '', text: 'Toda la organización' }));
+  select.appendChild(el('option', { value: '', text: textoTodos }));
 
   Jerarquia.aplanar(App.agentes)
-    .filter(({ agente }) => agente.rol !== 'Agente')
+    .filter(({ agente }) => (soloLideres ? agente.rol !== 'Agente' : true))
     .forEach(({ agente, nivel }) => {
       select.appendChild(el('option', {
         value: agente.id,
-        text: `${'　'.repeat(nivel)}${agente.nombre} · ${agente.rol}`,
+        text: `${'　'.repeat(nivel)}${agente.nombre} · ${agente.rol || 'Agente'}`,
       }));
     });
 
   if ([...select.options].some(o => o.value === previo)) select.value = previo;
+}
+
+/** Personas que pueden encabezar una línea (todo lo que no sea Agente). */
+function llenarSelectLinea(select) {
+  llenarSelectJerarquia(select, { soloLideres: true });
+}
+
+/**
+ * Ids que entran en el alcance de una persona: ella misma mas todo lo que
+ * cuelga de su linea, sin importar cuantos niveles intermedios haya. Se
+ * incluye a la propia persona porque un SA tambien puede producir.
+ */
+function alcanceDe(id) {
+  if (!id) return null;                       // null = toda la organizacion
+  return new Set([id, ...Jerarquia.descendientes(App.agentes, id).map(a => a.id)]);
 }
 
 /** Agentes de campo dentro de la línea elegida (o todos si no hay línea). */
@@ -1322,6 +1484,7 @@ async function iniciar() {
   iniciarPestanas();
   iniciarFormRegistro();
   iniciarStats();
+  iniciarComparativa();
   iniciarMetas();
   iniciarAgentes();
 

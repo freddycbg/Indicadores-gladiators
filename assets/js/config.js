@@ -98,6 +98,19 @@ const METAS_CAMPOS = [
   { key: 'referidos', label: 'Referidos',       corto: 'REF',   tipo: 'entero' },
 ];
 
+/* =========================================================================
+   COMPARATIVA SEMANAL
+   Indicadores que se contrastan contra la semana anterior. "mejor" dice
+   hacia donde es bueno moverse: en la tasa de no-show, bajar es ganar.
+   ========================================================================= */
+const COMPARATIVA_CAMPOS = [
+  { key: 'alp',       label: 'ALP',             tipo: 'moneda', mejor: 'alto' },
+  { key: 'app',       label: 'Citas agendadas', tipo: 'entero', mejor: 'alto' },
+  { key: 'referidos', label: 'Referidos',       tipo: 'entero', mejor: 'alto' },
+  { key: 'tasaNoShow', label: 'Tasa de NO SHOW', tipo: 'porcentaje', mejor: 'bajo',
+    calculado: true },
+];
+
 /* Umbrales del semaforo, sobre el % de cumplimiento promedio */
 const SEMAFORO = {
   verde:    90,   // >= 90%

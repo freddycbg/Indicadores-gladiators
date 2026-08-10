@@ -654,6 +654,45 @@ input:invalid:not(:placeholder-shown) { border-color: var(--critico); }
 .marca-estado--on  { background: var(--acento-lavado); color: var(--acento-alto); }
 .marca-estado--off { background: var(--superficie-2);  color: var(--tinta-3); }
 
+/* ---------- Comparativa semanal ----------------------------------------- */
+
+.comparativa {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(178px, 1fr));
+  gap: 12px;
+}
+
+.comp-tarjeta {
+  border: 1px solid var(--borde);
+  border-radius: var(--r-md);
+  padding: 13px 15px;
+  background: var(--superficie);
+}
+
+.comp-delta {
+  display: inline-block;
+  margin-top: 5px;
+  font-size: .82rem;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  padding: 2px 8px;
+  border-radius: 999px;
+}
+/* El color acompaña a la flecha y el signo, nunca los sustituye. */
+.comp-delta--bien   { color: var(--bien);    background: rgba(12, 163, 12, .10); }
+.comp-delta--mal    { color: var(--critico); background: var(--critico-lav); }
+.comp-delta--neutro { color: var(--tinta-3); background: var(--superficie-2); }
+
+.comp-antes {
+  margin-top: 6px;
+  font-size: .78rem;
+  color: var(--tinta-3);
+  font-variant-numeric: tabular-nums;
+}
+
+/* El selector vive en el encabezado de la tarjeta, no en la barra de filtros */
+.tarjeta-cab--fila .campo--sm { max-width: 230px; }
+
 /* ---------- Metas ------------------------------------------------------- */
 
 /* El paso de semana necesita mas ancho que un campo normal: con una sola
