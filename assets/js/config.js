@@ -161,15 +161,25 @@ const PREMIO_TIPOS = [
 /**
  * Ambito de cada requisito.
  *   individual → lo mide cada participante por separado
- *   equipo     → se mide la suma de todo el alcance, y funciona como
- *                puerta: si el equipo no llega, nadie califica
- * Las puertas de equipo se exigen siempre; la forma de combinar
+ *   equipo     → suma de todo el alcance
+ *   conteo     → cuantas personas alcanzan un umbral cada una. Lleva dos
+ *                numeros: el umbral por persona y el minimo de personas.
+ *                Es lo que en la compania se llama certificar: si un
+ *                certificado son 4000 de ALP y hacen falta 4, se cuenta a
+ *                quienes llegaron a 4000, no la suma del equipo.
+ *
+ * 'equipo' y 'conteo' son colectivos y funcionan como puerta: si no se
+ * cumplen, nadie califica. Se exigen siempre; la forma de combinar
  * (todos / al menos uno) se aplica solo entre los requisitos individuales.
  */
 const AMBITO_REQUISITO = [
   { key: 'individual', label: 'Por agente' },
-  { key: 'equipo',     label: 'De todo el equipo' },
+  { key: 'equipo',     label: 'Suma del equipo' },
+  { key: 'conteo',     label: 'Cuántos certifican' },
 ];
+
+/** Ámbitos que se miden sobre el grupo y condicionan a todos. */
+const AMBITOS_COLECTIVOS = ['equipo', 'conteo'];
 
 const ALCANCE_TIPOS = [
   { key: 'todos',     label: 'Toda la organización' },

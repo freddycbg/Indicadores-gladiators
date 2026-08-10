@@ -128,7 +128,7 @@ const Store = (() => {
      nuevos, jerarquia distinta). Sin esto, un navegador que ya tenia la
      semilla vieja nunca recibia la nueva y quedaba con datos incoherentes
      respecto del codigo. Solo afecta al modo demo. */
-  const SEMILLA_VERSION = '5-contest-por-equipo-de-sa';
+  const SEMILLA_VERSION = '6-requisito-por-certificaciones';
 
   function leerLS(clave, porDefecto) {
     try {
@@ -321,6 +321,24 @@ const Store = (() => {
         combinacion: 'todos',
         alcanceTipo: 'linea',
         alcanceLinea: 'a4',                  // solo el equipo de Yeni (SA)
+        alcanceIds: [],
+        estatus: 'auto',
+      },
+      {
+        // Regla de certificacion: no importa la suma del equipo, importa
+        // cuantos llegaron por su cuenta al numero de certificado.
+        id: 'c7',
+        nombre: 'Bono por Certificaciones',
+        desde: sumarDias(hoyISO(), -8),
+        hasta: sumarDias(hoyISO(), 13),
+        premioTipo: 'efectivo',
+        premio: '$1,000 para el equipo si certifican 4',
+        requisitos: [
+          { campo: 'alp', meta: 4, umbral: 4000, ambito: 'conteo' },
+        ],
+        combinacion: 'todos',
+        alcanceTipo: 'linea',
+        alcanceLinea: 'a2',                  // linea del GA
         alcanceIds: [],
         estatus: 'auto',
       },

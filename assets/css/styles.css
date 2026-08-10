@@ -928,13 +928,19 @@ input:invalid:not(:placeholder-shown) { border-color: var(--critico); }
   grid-template-columns: 1fr auto;
   align-items: center;
   gap: 4px 10px;
-  margin-bottom: 6px;
+  margin-bottom: 8px;
 }
 .meta-equipo-cifra {
   font-size: .78rem;
   font-weight: 600;
   font-variant-numeric: tabular-nums;
   white-space: nowrap;
+}
+/* Quiénes certificaron: ocupa la fila completa bajo la barra */
+.meta-equipo-nota {
+  grid-column: 1 / -1;
+  font-size: .74rem;
+  color: var(--tinta-3);
 }
 .meta-equipo .ayuda { margin: 6px 0 0; font-size: .76rem; }
 
@@ -998,13 +1004,16 @@ input:invalid:not(:placeholder-shown) { border-color: var(--critico); }
   align-items: center;
   margin-bottom: 8px;
 }
-.req-fila .req-ambito { width: 150px; flex: none; }
-.req-fila .req-campo  { flex: 1; min-width: 0; }
-.req-fila .req-meta   { width: 110px; flex: none; }
+.req-fila { flex-wrap: wrap; }
+.req-fila .req-ambito { width: 148px; flex: none; }
+.req-fila .req-campo  { flex: 1; min-width: 120px; }
+.req-fila .req-umbral,
+.req-fila .req-meta   { width: 118px; flex: none; }
 
 @media (max-width: 560px) {
-  .req-fila { flex-wrap: wrap; }
   .req-fila .req-ambito { width: 100%; }
+  .req-fila .req-umbral,
+  .req-fila .req-meta { flex: 1; width: auto; }
 }
 
 .lista-check {

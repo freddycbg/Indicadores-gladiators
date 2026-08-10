@@ -1451,7 +1451,8 @@ function participantesDe(c) {
   return activos;
 }
 
-const esRequisitoDeEquipo = req => (req.ambito || 'individual') === 'equipo';
+const ambitoDe = req => req.ambito || 'individual';
+const esColectivo = req => AMBITOS_COLECTIVOS.includes(ambitoDe(req));
 
 /** Suma un campo sobre un conjunto de registros ya acotado. */
 function sumaEnRango(registros, campo) {
@@ -1469,18 +1470,42 @@ function detalleRequisito(req, real) {
 }
 
 /**
- * Requisitos de equipo: se miden sobre la suma de todo el alcance y
- * funcionan como puerta. Si el equipo no llega, nadie califica por bueno
- * que sea su numero individual.
+ * Requisitos colectivos: se miden sobre el grupo y funcionan como puerta.
+ * Si no se cumplen, nadie califica por bueno que sea su número individual.
+ *
+ *   equipo → la suma del alcance debe llegar a la meta
+ *   conteo → al menos N personas deben llegar cada una al umbral. Es la
+ *            regla de certificación: no importa la suma, importa cuántos
+ *            llegaron por su cuenta.
  */
-function progresoEquipo(c, registros) {
-  const ids = new Set(participantesDe(c).map(a => a.id));
-  const delEquipo = registros.filter(
+function progresoColectivo(c, registros) {
+  const participantes = participantesDe(c);
+  const ids = new Set(participantes.map(a => a.id));
+  const enRango = registros.filter(
     r => ids.has(r.agenteId) && r.fecha >= c.desde && r.fecha <= c.hasta);
 
-  const detalles = (c.requisitos || [])
-    .filter(esRequisitoDeEquipo)
-    .map(req => detalleRequisito(req, sumaEnRango(delEquipo, req.campo)));
+  const detalles = (c.requisitos || []).filter(esColectivo).map(req => {
+    const campo = CAMPOS.find(x => x.key === req.campo);
+
+    if (ambitoDe(req) === 'conteo') {
+      const umbral = Number(req.umbral) || 0;
+      const minimo = Number(req.meta) || 0;
+
+      const certificados = participantes.filter(a =>
+        sumaEnRango(enRango.filter(r => r.agenteId === a.id), req.campo) >= umbral);
+
+      return {
+        tipo: 'conteo', campo, umbral,
+        real: certificados.length,
+        meta: minimo,
+        quienes: certificados.map(a => a.nombre),
+        ratio: minimo > 0 ? certificados.length / minimo : 1,
+        cumplido: minimo > 0 ? certificados.length >= minimo : true,
+      };
+    }
+
+    return { tipo: 'equipo', ...detalleRequisito(req, sumaEnRango(enRango, req.campo)) };
+  });
 
   return {
     detalles,
@@ -1502,7 +1527,7 @@ function progresoDe(c, agenteId, registros, equipo = { hay: false, cumplido: tru
     r => r.agenteId === agenteId && r.fecha >= c.desde && r.fecha <= c.hasta);
 
   const detalles = (c.requisitos || [])
-    .filter(req => !esRequisitoDeEquipo(req))
+    .filter(req => !esColectivo(req))
     .map(req => detalleRequisito(req, sumaEnRango(suyos, req.campo)));
 
   if (!detalles.length) {
@@ -1531,22 +1556,28 @@ function progresoDe(c, agenteId, registros, equipo = { hay: false, cumplido: tru
   };
 }
 
-/** "Equipo ALP ≥ 40,000.00 · cada uno ALP ≥ 2,000.00" */
+/** "Equipo: 4 certifican con ALP ≥ 4,000.00 · Cada uno: REF ≥ 5" */
 function textoRequisitos(c) {
   if (!c.requisitos || !c.requisitos.length) return 'Sin requisitos definidos';
 
   const texto = r => {
     const campo = CAMPOS.find(x => x.key === r.campo);
-    return `${campo ? campo.corto : r.campo} ≥ ${fmt(r.meta, campo ? campo.tipo : 'entero')}`;
+    const corto = campo ? campo.corto : r.campo;
+    const tipo  = campo ? campo.tipo : 'entero';
+
+    if (ambitoDe(r) === 'conteo') {
+      return `${fmt(r.meta, 'entero')} certifican con ${corto} ≥ ${fmt(r.umbral, tipo)}`;
+    }
+    return `${corto} ≥ ${fmt(r.meta, tipo)}`;
   };
 
-  const equipo = c.requisitos.filter(esRequisitoDeEquipo);
-  const propios = c.requisitos.filter(r => !esRequisitoDeEquipo(r));
+  const colectivos = c.requisitos.filter(esColectivo);
+  const propios    = c.requisitos.filter(r => !esColectivo(r));
   const union = c.combinacion === 'alguno' ? ' o ' : ' y ';
 
   const partes = [];
-  if (equipo.length)  partes.push(`Equipo: ${equipo.map(texto).join(' y ')}`);
-  if (propios.length) partes.push(`Cada uno: ${propios.map(texto).join(union)}`);
+  if (colectivos.length) partes.push(`Equipo: ${colectivos.map(texto).join(' y ')}`);
+  if (propios.length)    partes.push(`Cada uno: ${propios.map(texto).join(union)}`);
   return partes.join(' · ');
 }
 
@@ -1592,7 +1623,7 @@ function tarjetaContest(c, registros, esAdmin) {
   const estado = estadoDeContest(c);
   const tipo = PREMIO_TIPOS.find(p => p.key === c.premioTipo) || PREMIO_TIPOS[3];
   const participantes = participantesDe(c);
-  const equipo = progresoEquipo(c, registros);
+  const equipo = progresoColectivo(c, registros);
 
   const avances = participantes
     .map(a => ({ agente: a, ...progresoDe(c, a.id, registros, equipo) }))
@@ -1632,20 +1663,32 @@ function tarjetaContest(c, registros, esAdmin) {
         text: equipo.cumplido ? '✓ Alcanzada' : 'Pendiente',
       }),
     ]),
-    ...equipo.detalles.map(d => el('div', { class: 'meta-equipo-req' }, [
-      el('span', { class: 'barra' }, [
-        el('span', {
-          class: 'barra-relleno' + (d.cumplido ? ' barra-relleno--ok' : ''),
-          style: `width:${Math.max(2, Math.round(Math.min(d.ratio, 1) * 100))}%`,
-        }),
-      ]),
-      el('span', {
-        class: 'meta-equipo-cifra',
-        text: `${d.campo ? d.campo.corto : '?'} ` +
-              `${fmt(d.real, d.campo ? d.campo.tipo : 'entero')} / ` +
-              `${fmt(d.meta, d.campo ? d.campo.tipo : 'entero')}`,
-      }),
-    ])),
+    ...equipo.detalles.map(d => {
+      const corto = d.campo ? d.campo.corto : '?';
+      const tipo  = d.campo ? d.campo.tipo : 'entero';
+
+      // El conteo se lee en personas, no en la unidad del indicador.
+      const cifra = d.tipo === 'conteo'
+        ? `${d.real} de ${d.meta} certificados`
+        : `${corto} ${fmt(d.real, tipo)} / ${fmt(d.meta, tipo)}`;
+
+      const nota = d.tipo === 'conteo'
+        ? `Certifica quien llegue a ${corto} ≥ ${fmt(d.umbral, tipo)}` +
+          (d.quienes.length ? `: ${d.quienes.slice(0, 5).join(', ')}` +
+            (d.quienes.length > 5 ? ` y ${d.quienes.length - 5} más` : '') : '')
+        : null;
+
+      return el('div', { class: 'meta-equipo-req' }, [
+        el('span', { class: 'barra' }, [
+          el('span', {
+            class: 'barra-relleno' + (d.cumplido ? ' barra-relleno--ok' : ''),
+            style: `width:${Math.max(2, Math.round(Math.min(d.ratio, 1) * 100))}%`,
+          }),
+        ]),
+        el('span', { class: 'meta-equipo-cifra', text: cifra }),
+        nota ? el('span', { class: 'meta-equipo-nota', text: nota }) : null,
+      ].filter(Boolean));
+    }),
     el('p', {
       class: 'ayuda',
       text: equipo.cumplido
@@ -1730,15 +1773,19 @@ function textoAlcance(c) {
 
 function exportarContestCSV(c, avances, equipo) {
   const cab = ['Contest', 'Desde', 'Hasta', 'Agente', 'Cumplió', 'Avance %'];
-  (c.requisitos || []).filter(r => !esRequisitoDeEquipo(r)).forEach(r => {
+  (c.requisitos || []).filter(r => !esColectivo(r)).forEach(r => {
     const campo = CAMPOS.find(x => x.key === r.campo);
     cab.push(`${campo ? campo.corto : r.campo} real`, `${campo ? campo.corto : r.campo} meta`);
   });
-  // Las cifras de equipo son las mismas en todas las filas, pero repetirlas
+  // Las cifras colectivas son las mismas en todas las filas, pero repetirlas
   // permite leer el archivo sin volver a la aplicación.
   (equipo && equipo.detalles || []).forEach(d => {
-    cab.push(`Equipo ${d.campo ? d.campo.corto : '?'} real`,
-             `Equipo ${d.campo ? d.campo.corto : '?'} meta`);
+    const corto = d.campo ? d.campo.corto : '?';
+    if (d.tipo === 'conteo') {
+      cab.push(`Certificados ${corto} (>=${d.umbral})`, `Certificados ${corto} mínimo`);
+    } else {
+      cab.push(`Equipo ${corto} real`, `Equipo ${corto} meta`);
+    }
   });
 
   const filas = avances.map(a => {
@@ -1778,14 +1825,25 @@ function agregarFilaRequisito(req = null) {
     selAmbito.appendChild(el('option', { value: a.key, text: a.label })));
   selAmbito.value = req ? (req.ambito || 'individual') : 'individual';
 
+  // Solo el conteo necesita dos números: el umbral por persona y cuántas.
+  const inpUmbral = el('input', {
+    type: 'number', class: 'req-umbral', min: '0', step: 'any',
+    inputmode: 'decimal', placeholder: 'Certifica con',
+    title: 'Cuánto debe hacer una persona para certificar',
+    value: req && req.umbral ? req.umbral : '',
+  });
+
+  const inpMeta = el('input', {
+    type: 'number', class: 'req-meta', min: '0', step: 'any',
+    placeholder: 'Meta', inputmode: 'decimal',
+    value: req ? req.meta : '',
+  });
+
   const fila = el('div', { class: 'req-fila' }, [
     selAmbito,
     selCampo,
-    el('input', {
-      type: 'number', class: 'req-meta', min: '0', step: 'any',
-      placeholder: 'Meta', inputmode: 'decimal',
-      value: req ? req.meta : '',
-    }),
+    inpUmbral,
+    inpMeta,
     el('button', {
       class: 'btn-mini btn-mini--peligro', type: 'button', text: '✕',
       'aria-label': 'Quitar requisito',
@@ -1793,9 +1851,20 @@ function agregarFilaRequisito(req = null) {
     }),
   ]);
 
-  selAmbito.addEventListener('change', actualizarZonaCombinacion);
+  const ajustarPorAmbito = () => {
+    const esConteo = selAmbito.value === 'conteo';
+    inpUmbral.hidden = !esConteo;
+    inpMeta.placeholder = esConteo ? 'Mín. personas' : 'Meta';
+    inpMeta.title = esConteo
+      ? 'Cuántas personas deben certificar'
+      : 'Valor a alcanzar';
+    inpMeta.step = esConteo ? '1' : 'any';
+    actualizarZonaCombinacion();
+  };
+
+  selAmbito.addEventListener('change', ajustarPorAmbito);
   cont.appendChild(fila);
-  actualizarZonaCombinacion();
+  ajustarPorAmbito();
 }
 
 /**
@@ -1896,12 +1965,24 @@ async function guardarContestDesdeForm(e) {
   e.preventDefault();
 
   const requisitos = $$('#ct_requisitos .req-fila')
-    .map(f => ({
-      campo: f.querySelector('.req-campo').value,
-      meta: nDecimal(f.querySelector('.req-meta').value),
-      ambito: f.querySelector('.req-ambito').value,
-    }))
+    .map(f => {
+      const ambito = f.querySelector('.req-ambito').value;
+      const base = {
+        campo: f.querySelector('.req-campo').value,
+        meta: nDecimal(f.querySelector('.req-meta').value),
+        ambito,
+      };
+      if (ambito === 'conteo') base.umbral = nDecimal(f.querySelector('.req-umbral').value);
+      return base;
+    })
     .filter(r => r.meta > 0);
+
+  const conteoSinUmbral = requisitos.find(r => r.ambito === 'conteo' && !(r.umbral > 0));
+  if (conteoSinUmbral) {
+    const campo = CAMPOS.find(x => x.key === conteoSinUmbral.campo);
+    return aviso(`Falta decir con cuánto certifica una persona en ` +
+                 `${campo ? campo.corto : conteoSinUmbral.campo}.`, 'error');
+  }
 
   const contest = {
     id: $('#ct_id').value || undefined,
