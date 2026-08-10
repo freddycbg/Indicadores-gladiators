@@ -463,9 +463,16 @@
     </div>
 
     <div class="campo" id="ct_lineaZona" hidden>
-      <label for="ct_alcanceLinea">Línea</label>
+      <label for="ct_alcanceLinea">¿El equipo de quién?</label>
       <select id="ct_alcanceLinea"></select>
+      <p class="ayuda">
+        Incluye a esa persona y a todo lo que cuelga de ella. Elegir un SA
+        cubre solo a su equipo, sin el resto de la línea del GA o del MGA.
+      </p>
     </div>
+
+    <!-- Quién queda dentro con el alcance elegido, antes de guardar -->
+    <p class="ayuda vista-previa" id="ct_vistaPrevia"></p>
 
     <div class="campo" id="ct_seleccionZona" hidden>
       <label>Participantes</label>

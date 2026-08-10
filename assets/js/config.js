@@ -172,9 +172,9 @@ const AMBITO_REQUISITO = [
 ];
 
 const ALCANCE_TIPOS = [
-  { key: 'todos',     label: 'Todo el equipo' },
-  { key: 'linea',     label: 'Solo la línea de…' },
-  { key: 'seleccion', label: 'Personas seleccionadas' },
+  { key: 'todos',     label: 'Toda la organización' },
+  { key: 'linea',     label: 'El equipo de un MGA, GA o SA' },
+  { key: 'seleccion', label: 'Personas elegidas a mano' },
 ];
 
 /* 'auto' deduce el estado por fecha; los otros dos se fuerzan a mano. */

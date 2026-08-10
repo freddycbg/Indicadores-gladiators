@@ -128,7 +128,7 @@ const Store = (() => {
      nuevos, jerarquia distinta). Sin esto, un navegador que ya tenia la
      semilla vieja nunca recibia la nueva y quedaba con datos incoherentes
      respecto del codigo. Solo afecta al modo demo. */
-  const SEMILLA_VERSION = '4-metas-de-lider-y-contest-de-equipo';
+  const SEMILLA_VERSION = '5-contest-por-equipo-de-sa';
 
   function leerLS(clave, porDefecto) {
     try {
@@ -302,6 +302,25 @@ const Store = (() => {
         combinacion: 'todos',
         alcanceTipo: 'linea',
         alcanceLinea: 'a1',                  // toda la linea del MGA
+        alcanceIds: [],
+        estatus: 'auto',
+      },
+      {
+        // Contest de un SA para su propio equipo, sin tocar al resto de la
+        // linea del GA ni del MGA.
+        id: 'c6',
+        nombre: 'Reto interno de Yeni',
+        desde: sumarDias(hoyISO(), -6),
+        hasta: sumarDias(hoyISO(), 8),
+        premioTipo: 'experiencia',
+        premio: 'Almuerzo de equipo + tarde libre',
+        requisitos: [
+          { campo: 'alp',       meta: 9000, ambito: 'equipo' },
+          { campo: 'pressSale', meta: 3,    ambito: 'individual' },
+        ],
+        combinacion: 'todos',
+        alcanceTipo: 'linea',
+        alcanceLinea: 'a4',                  // solo el equipo de Yeni (SA)
         alcanceIds: [],
         estatus: 'auto',
       },

@@ -1064,7 +1064,7 @@ function confirmarDescarte() {
 function llenarSelectJerarquia(select, { soloLideres = false, textoTodos = 'Toda la organización' } = {}) {
   const previo = select.value;
   select.innerHTML = '';
-  select.appendChild(el('option', { value: '', text: textoTodos }));
+  if (textoTodos !== null) select.appendChild(el('option', { value: '', text: textoTodos }));
 
   Jerarquia.aplanar(App.agentes)
     .filter(({ agente }) => (soloLideres ? agente.rol !== 'Agente' : true))
@@ -1407,7 +1407,10 @@ function iniciarContests() {
   $('#ct_alcanceTipo').addEventListener('change', e => {
     $('#ct_lineaZona').hidden     = e.target.value !== 'linea';
     $('#ct_seleccionZona').hidden = e.target.value !== 'seleccion';
+    actualizarVistaPrevia();
   });
+  $('#ct_alcanceLinea').addEventListener('change', actualizarVistaPrevia);
+  $('#ct_alcanceIds').addEventListener('change', actualizarVistaPrevia);
 
   $('#formContest').addEventListener('submit', guardarContestDesdeForm);
 }
@@ -1806,6 +1809,35 @@ function actualizarZonaCombinacion() {
   $('#ct_combinacionZona').hidden = individuales < 2;
 }
 
+/**
+ * Dice quién queda dentro con el alcance elegido, antes de guardar. Sin
+ * esto no hay forma de saber a quién cubre un contest hasta crearlo.
+ */
+function actualizarVistaPrevia() {
+  const zona = $('#ct_vistaPrevia');
+  const tipo = $('#ct_alcanceTipo').value;
+
+  const dentro = participantesDe({
+    alcanceTipo: tipo,
+    alcanceLinea: $('#ct_alcanceLinea').value,
+    alcanceIds: $$('#ct_alcanceIds input:checked').map(i => i.value),
+  });
+
+  if (tipo === 'linea' && !$('#ct_alcanceLinea').value) {
+    zona.textContent = 'Elige de quién es el equipo.';
+    return;
+  }
+  if (!dentro.length) {
+    zona.textContent = 'Nadie queda dentro con este alcance.';
+    return;
+  }
+
+  const nombres = dentro.map(a => a.nombre);
+  const muestra = nombres.slice(0, 6).join(', ');
+  zona.textContent = `Participan ${dentro.length}: ${muestra}` +
+                     (nombres.length > 6 ? ` y ${nombres.length - 6} más.` : '.');
+}
+
 function abrirDlgContest(c) {
   $('#dlgContestTitulo').textContent = c ? 'Editar contest' : 'Nuevo contest';
   $('#ct_id').value     = c ? c.id : '';
@@ -1830,7 +1862,12 @@ function abrirDlgContest(c) {
   (c && c.requisitos && c.requisitos.length ? c.requisitos : [null])
     .forEach(r => agregarFilaRequisito(r));
 
-  llenarSelectLinea($('#ct_alcanceLinea'));
+  // Sin la opción "toda la organización": para eso está el otro alcance,
+  // y dejarla aquí solo permitía guardar un contest sin equipo elegido.
+  llenarSelectJerarquia($('#ct_alcanceLinea'), { soloLideres: true, textoTodos: null });
+  $('#ct_alcanceLinea').insertBefore(
+    el('option', { value: '', text: '— Elige un equipo —' }),
+    $('#ct_alcanceLinea').firstChild);
   $('#ct_alcanceLinea').value = c ? (c.alcanceLinea || '') : '';
 
   // Casillas de participantes para el alcance a mano
@@ -1849,6 +1886,7 @@ function abrirDlgContest(c) {
 
   $('#ct_lineaZona').hidden     = $('#ct_alcanceTipo').value !== 'linea';
   $('#ct_seleccionZona').hidden = $('#ct_alcanceTipo').value !== 'seleccion';
+  actualizarVistaPrevia();
 
   $('#dlgContest').showModal();
   $('#ct_nombre').focus();

@@ -1025,6 +1025,16 @@ input:invalid:not(:placeholder-shown) { border-color: var(--critico); }
 
 .dialogo--ancho { width: min(560px, calc(100vw - 32px)); max-height: 88vh; overflow-y: auto; }
 
+/* Quiénes quedan dentro con el alcance elegido, antes de guardar */
+.vista-previa {
+  margin: 10px 0 0;
+  padding: 9px 11px;
+  border-radius: var(--r-sm);
+  background: var(--acento-lavado);
+  color: var(--acento-alto);
+  font-weight: 500;
+}
+
 /* ---------- Roles y organigrama ----------------------------------------- */
 
 .marca-rol {
