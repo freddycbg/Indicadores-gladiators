@@ -24,7 +24,7 @@ const CONFIG = {
 
   // URL del Web App de Google Apps Script (termina en /exec)
   // Ejemplo: https://script.google.com/macros/s/AKfycb.../exec
-  SHEETS_URL: 'https://script.google.com/macros/s/AKfycbxSzZnXbgZ5NKFqt4uRMIsmocK_BaeOJE79lQhzexpEjF1rWoyypHEZNFchRzu4De5S/exec',
+  SHEETS_URL: 'https://script.google.com/macros/s/AKfycbyGxRYz0zPpC1jU_swbRWTUtxO_SJnAwEEWPQWTYCIuN6Z3fu-4rG27Y9UTrZqTw0Hu/exec',
 
   // PIN de administrador para la pestaña "Agentes" (solo modo demo).
   // En modo 'sheets' el PIN vive en la hoja "Config" y se valida en el servidor.
