@@ -315,7 +315,8 @@ h3 { font-size: 1.05rem; }
   font-weight: 400; color: var(--tinta); cursor: pointer;
 }
 
-.campo > label {
+.campo > label,
+.campo > .etq-campo {
   font-size: .82rem;
   font-weight: 600;
   color: var(--tinta-2);
@@ -655,17 +656,30 @@ input:invalid:not(:placeholder-shown) { border-color: var(--critico); }
 
 /* ---------- Metas ------------------------------------------------------- */
 
+/* El paso de semana necesita mas ancho que un campo normal: con una sola
+   columna de la rejilla se desbordaba encima del selector de al lado. */
+.filtros .campo--ancho { grid-column: span 2; }
+@media (max-width: 380px) {
+  .filtros .campo--ancho { grid-column: span 1; }
+}
+
 .paso-semana {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: 6px;
   min-height: 42px;
+  border: 1px solid var(--borde-campo);
+  border-radius: var(--r-sm);
+  padding: 3px 4px;
+  background: var(--superficie);
 }
 .paso-semana span {
-  font-size: .92rem;
+  flex: 1;
+  min-width: 0;
+  font-size: .9rem;
   font-weight: 600;
-  min-width: 132px;
   text-align: center;
+  white-space: nowrap;
   font-variant-numeric: tabular-nums;
 }
 .paso-semana .btn-mini {

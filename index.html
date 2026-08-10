@@ -180,11 +180,11 @@
   <section class="panel" id="panel-metas" role="tabpanel">
 
     <div class="filtros" id="filtrosMetas">
-      <div class="campo campo--sm">
-        <label for="m_semana">Semana</label>
-        <div class="paso-semana">
+      <div class="campo campo--ancho">
+        <span class="etq-campo" id="etqSemanaTitulo">Semana</span>
+        <div class="paso-semana" role="group" aria-labelledby="etqSemanaTitulo">
           <button type="button" class="btn-mini" id="btnSemanaAnt" aria-label="Semana anterior">‹</button>
-          <span id="etqSemana">—</span>
+          <span id="etqSemana" aria-live="polite">—</span>
           <button type="button" class="btn-mini" id="btnSemanaSig" aria-label="Semana siguiente">›</button>
         </div>
       </div>

@@ -121,6 +121,13 @@ const Store = (() => {
   const LS_AGENTES   = 'gt_agentes_v1';
   const LS_REGISTROS = 'gt_registros_v1';
   const LS_METAS     = 'gt_metas_v1';
+  const LS_SEMILLA   = 'gt_semilla_version';
+
+  /* Subir este numero al cambiar la FORMA de los datos de prueba (campos
+     nuevos, jerarquia distinta). Sin esto, un navegador que ya tenia la
+     semilla vieja nunca recibia la nueva y quedaba con datos incoherentes
+     respecto del codigo. Solo afecta al modo demo. */
+  const SEMILLA_VERSION = '3-jerarquia-y-metas';
 
   function leerLS(clave, porDefecto) {
     try {
@@ -138,7 +145,7 @@ const Store = (() => {
   /* --- Semilla de prueba: 8 agentes y ~45 días de registros -------------- */
 
   function sembrarDemo() {
-    if (localStorage.getItem(LS_AGENTES)) return;
+    if (localStorage.getItem(LS_SEMILLA) === SEMILLA_VERSION) return;
 
     /* Arbol de prueba, con la misma forma del organigrama real:
          Domenico (MGA)
@@ -247,6 +254,7 @@ const Store = (() => {
     escribirLS(LS_AGENTES, agentes);
     escribirLS(LS_REGISTROS, registros);
     escribirLS(LS_METAS, metas);
+    localStorage.setItem(LS_SEMILLA, SEMILLA_VERSION);
   }
 
   const demo = {
@@ -420,9 +428,7 @@ const Store = (() => {
     },
 
     async reiniciarDemo() {
-      localStorage.removeItem(LS_AGENTES);
-      localStorage.removeItem(LS_REGISTROS);
-      localStorage.removeItem(LS_METAS);
+      localStorage.removeItem(LS_SEMILLA);
       sembrarDemo();
       return true;
     },
