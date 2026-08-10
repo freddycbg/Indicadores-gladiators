@@ -80,6 +80,61 @@ function relativoSemana(lunesISO) {
   return '';
 }
 
+/* ---------- Rangos de fecha --------------------------------------------- */
+
+/** Primer día del mes de una fecha ISO. */
+function inicioDeMes(iso) {
+  return iso.slice(0, 8) + '01';
+}
+
+/** Último día del mes de una fecha ISO. */
+function finDeMes(iso) {
+  const [a, m] = iso.split('-').map(Number);
+  return `${a}-${pad2(m)}-${pad2(new Date(a, m, 0).getDate())}`;
+}
+
+/**
+ * Traduce un preset a { desde, hasta }. Devuelve null para 'custom', que
+ * deja las dos fechas como estén.
+ */
+function rangoDePreset(key) {
+  const hoy = hoyISO();
+
+  switch (key) {
+    case 'hoy':          return { desde: hoy, hasta: hoy };
+    case 'ayer': {
+      const a = sumarDias(hoy, -1);
+      return { desde: a, hasta: a };
+    }
+    case 'semana': {
+      const l = semanaActual();
+      return { desde: l, hasta: hoy < domingoDeLaSemana(l) ? hoy : domingoDeLaSemana(l) };
+    }
+    case 'semanaPasada': {
+      const l = sumarDias(semanaActual(), -7);
+      return { desde: l, hasta: domingoDeLaSemana(l) };
+    }
+    case 'mes':          return { desde: inicioDeMes(hoy), hasta: hoy };
+    case 'mesPasado': {
+      const finAnterior = sumarDias(inicioDeMes(hoy), -1);
+      return { desde: inicioDeMes(finAnterior), hasta: finAnterior };
+    }
+    case 'anio':         return { desde: hoy.slice(0, 4) + '-01-01', hasta: hoy };
+    case 'custom':       return null;
+    default: {
+      const dias = parseInt(key, 10);
+      if (!Number.isFinite(dias)) return null;
+      return { desde: sumarDias(hoy, -(dias - 1)), hasta: hoy };
+    }
+  }
+}
+
+/** Días que abarca un rango, inclusive. */
+function diasDelRango(desde, hasta) {
+  if (!desde || !hasta) return 0;
+  return Math.max(0, diasDesde(desde) - diasDesde(hasta)) + 1;
+}
+
 /** Días transcurridos entre una fecha ISO y hoy. Negativo si es futura. */
 function diasDesde(iso) {
   const [a, m, d] = iso.split('-').map(Number);

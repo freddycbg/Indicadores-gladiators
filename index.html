@@ -28,7 +28,8 @@
 
   <nav class="pestanas" role="tablist" aria-label="Secciones">
     <button class="pestana is-activa" role="tab" data-panel="panel-registro"     aria-selected="true">Registro</button>
-    <button class="pestana"           role="tab" data-panel="panel-estadisticas" aria-selected="false">Estadísticas y Reportes</button>
+    <button class="pestana"           role="tab" data-panel="panel-resumen"      aria-selected="false">Resumen</button>
+    <button class="pestana"           role="tab" data-panel="panel-reportes"     aria-selected="false">Reportes</button>
     <button class="pestana"           role="tab" data-panel="panel-metas"        aria-selected="false">Metas</button>
     <button class="pestana"           role="tab" data-panel="panel-agentes"      aria-selected="false">Agentes</button>
   </nav>
@@ -92,50 +93,35 @@
     </div>
   </section>
 
-  <!-- ================= PANEL: ESTADÍSTICAS Y REPORTES ================= -->
-  <section class="panel" id="panel-estadisticas" role="tabpanel">
+  <!-- ================= PANEL: RESUMEN ================= -->
+  <!-- Responde "¿cómo vamos?": se mira de reojo, sin tablas largas.     -->
+  <section class="panel" id="panel-resumen" role="tabpanel">
 
-    <div class="filtros" id="filtrosStats">
+    <div class="filtros" id="filtrosResumen">
       <div class="campo campo--sm">
-        <label for="s_preset">Periodo</label>
-        <select id="s_preset">
-          <option value="7">Últimos 7 días</option>
-          <option value="30" selected>Últimos 30 días</option>
-          <option value="90">Últimos 90 días</option>
-          <option value="mes">Mes en curso</option>
-          <option value="custom">Personalizado</option>
-        </select>
+        <label for="rs_preset">Periodo</label>
+        <select id="rs_preset"></select>
       </div>
-      <div class="campo campo--sm"><label for="s_desde">Desde</label><input type="date" id="s_desde"></div>
-      <div class="campo campo--sm"><label for="s_hasta">Hasta</label><input type="date" id="s_hasta"></div>
-      <div class="campo campo--sm">
-        <label for="s_agente">Agente</label>
-        <select id="s_agente"><option value="">Todos los agentes</option></select>
-      </div>
-      <div class="filtros-acc">
-        <button class="btn btn-suave" id="btnImprimir" type="button">Imprimir</button>
-        <button class="btn btn-suave" id="btnCSV" type="button">Exportar CSV</button>
+      <div class="campo campo--ancho">
+        <label for="rs_linea">Ver</label>
+        <select id="rs_linea"></select>
       </div>
     </div>
 
-    <!-- Comparativa semanal: no depende de los filtros de arriba -->
+    <!-- Fila de indicadores del periodo elegido -->
+    <div class="kpis" id="kpis"></div>
+
+    <!-- Comparativa semanal: siempre semanal, al margen del periodo -->
     <div class="tarjeta">
-      <div class="tarjeta-cab tarjeta-cab--fila">
-        <div>
-          <h2>Comparativa semanal</h2>
-          <p class="ayuda" id="comparativaAyuda"></p>
-        </div>
-        <div class="campo campo--sm">
-          <label for="c_linea">Ver</label>
-          <select id="c_linea"></select>
-        </div>
+      <div class="tarjeta-cab">
+        <h2>Comparativa semanal</h2>
+        <p class="ayuda" id="comparativaAyuda"></p>
       </div>
-      <div class="comparativa" id="comparativa"></div>
+      <div class="tabla-scroll">
+        <table class="tabla" id="tablaComparativa"></table>
+      </div>
       <p class="ayuda" id="comparativaAlcance"></p>
     </div>
-
-    <!-- Fila de indicadores -->
-    <div class="kpis" id="kpis"></div>
 
     <div class="rejilla-graficas">
       <div class="tarjeta">
@@ -170,6 +156,28 @@
         <div class="lienzo" id="tasas"></div>
       </div>
     </div>
+  </section>
+
+  <!-- ================= PANEL: REPORTES ================= -->
+  <!-- Responde "dame los números de tal fecha": tablas y exportación.   -->
+  <section class="panel" id="panel-reportes" role="tabpanel">
+
+    <div class="filtros" id="filtrosReportes">
+      <div class="campo campo--sm">
+        <label for="rp_preset">Periodo</label>
+        <select id="rp_preset"></select>
+      </div>
+      <div class="campo campo--sm"><label for="rp_desde">Desde</label><input type="date" id="rp_desde"></div>
+      <div class="campo campo--sm"><label for="rp_hasta">Hasta</label><input type="date" id="rp_hasta"></div>
+      <div class="campo campo--ancho">
+        <label for="rp_linea">Ver</label>
+        <select id="rp_linea"></select>
+      </div>
+      <div class="filtros-acc">
+        <button class="btn btn-suave" id="btnImprimir" type="button">Imprimir</button>
+        <button class="btn btn-suave" id="btnCSV" type="button">Exportar CSV</button>
+      </div>
+    </div>
 
     <div class="tarjeta" id="bloqueReporte">
       <div class="tarjeta-cab">
@@ -184,7 +192,7 @@
     <div class="tarjeta">
       <div class="tarjeta-cab">
         <h2>Detalle de registros</h2>
-        <p class="ayuda">Todos los registros individuales del periodo y agente seleccionados.</p>
+        <p class="ayuda">Cada registro individual del periodo y la línea seleccionados.</p>
       </div>
       <div class="tabla-scroll">
         <table class="tabla" id="tablaDetalle"></table>

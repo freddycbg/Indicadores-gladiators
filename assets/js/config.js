@@ -72,16 +72,20 @@ function rangoDeRol(rol) {
    CAMPOS DEL REPORTE DIARIO — fuente única de verdad
    El formulario, la tabla, las estadísticas y el export se generan de aquí.
    Para agregar o quitar una métrica, edita solo este arreglo.
+
+   "mejor" dice hacia dónde es bueno moverse. Lo usa la comparativa para
+   pintar la variación: en NO SHOW o No Califica, subir es mala noticia
+   aunque el número crezca. Si se omite, se asume 'alto'.
    ========================================================================= */
 const CAMPOS = [
   { key: 'app',         label: 'Appointment (APP)',      corto: 'APP',           tipo: 'entero' },
   { key: 'press',       label: 'Presentaciones (PRESS)', corto: 'PRESS',         tipo: 'entero' },
   { key: 'pressSale',   label: 'PRESS SALE',             corto: 'PRESS SALE',    tipo: 'entero' },
-  { key: 'pressNoSale', label: 'PRESS NO SALE',          corto: 'PRESS NO SALE', tipo: 'entero' },
+  { key: 'pressNoSale', label: 'PRESS NO SALE',          corto: 'PRESS NO SALE', tipo: 'entero', mejor: 'bajo' },
   { key: 'callerCalls', label: 'Llamadas del Caller',    corto: 'CALLER',        tipo: 'entero' },
-  { key: 'noShow',      label: 'NO SHOW',                corto: 'NO SHOW',       tipo: 'entero' },
-  { key: 'noCalifica',  label: 'No Califica',            corto: 'NO CALIF.',     tipo: 'entero' },
-  { key: 'reschedule',  label: 'Reschedule',             corto: 'RESCH.',        tipo: 'entero' },
+  { key: 'noShow',      label: 'NO SHOW',                corto: 'NO SHOW',       tipo: 'entero', mejor: 'bajo' },
+  { key: 'noCalifica',  label: 'No Califica',            corto: 'NO CALIF.',     tipo: 'entero', mejor: 'bajo' },
+  { key: 'reschedule',  label: 'Reschedule',             corto: 'RESCH.',        tipo: 'entero', mejor: 'bajo' },
   { key: 'referidos',   label: 'Referidos (REF)',        corto: 'REF',           tipo: 'entero' },
   { key: 'alp',         label: 'ALP',                    corto: 'ALP',           tipo: 'moneda' },
 ];
@@ -99,16 +103,40 @@ const METAS_CAMPOS = [
 ];
 
 /* =========================================================================
+   RANGOS DE FECHA PREDEFINIDOS
+   Cubren desde un dia suelto hasta el ano completo. 'custom' deja las dos
+   fechas a mano.
+   ========================================================================= */
+const PRESETS_RANGO = [
+  { key: 'hoy',          label: 'Hoy' },
+  { key: 'ayer',         label: 'Ayer' },
+  { key: 'semana',       label: 'Esta semana' },
+  { key: 'semanaPasada', label: 'Semana pasada' },
+  { key: '7',            label: 'Últimos 7 días' },
+  { key: '15',           label: 'Últimos 15 días (quincena)' },
+  { key: '30',           label: 'Últimos 30 días' },
+  { key: 'mes',          label: 'Mes en curso' },
+  { key: 'mesPasado',    label: 'Mes pasado' },
+  { key: '90',           label: 'Últimos 3 meses' },
+  { key: 'anio',         label: 'Este año' },
+  { key: 'custom',       label: 'Personalizado' },
+];
+
+/* =========================================================================
    COMPARATIVA SEMANAL
-   Indicadores que se contrastan contra la semana anterior. "mejor" dice
-   hacia donde es bueno moverse: en la tasa de no-show, bajar es ganar.
+   Se contrastan TODOS los indicadores del registro diario, mas dos tasas
+   derivadas que no se capturan pero se leen mejor como porcentaje.
+   Al agregar una metrica a CAMPOS aparece aqui sola.
    ========================================================================= */
 const COMPARATIVA_CAMPOS = [
-  { key: 'alp',       label: 'ALP',             tipo: 'moneda', mejor: 'alto' },
-  { key: 'app',       label: 'Citas agendadas', tipo: 'entero', mejor: 'alto' },
-  { key: 'referidos', label: 'Referidos',       tipo: 'entero', mejor: 'alto' },
-  { key: 'tasaNoShow', label: 'Tasa de NO SHOW', tipo: 'porcentaje', mejor: 'bajo',
-    calculado: true },
+  ...CAMPOS.map(c => ({
+    key: c.key, label: c.label, corto: c.corto,
+    tipo: c.tipo, mejor: c.mejor || 'alto',
+  })),
+  { key: 'tasaNoShow', label: 'Tasa de NO SHOW', corto: '% NO SHOW',
+    tipo: 'porcentaje', mejor: 'bajo', calculado: true },
+  { key: 'tasaCierre', label: 'Tasa de cierre', corto: '% CIERRE',
+    tipo: 'porcentaje', mejor: 'alto', calculado: true },
 ];
 
 /* Umbrales del semaforo, sobre el % de cumplimiento promedio */

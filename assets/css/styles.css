@@ -656,18 +656,13 @@ input:invalid:not(:placeholder-shown) { border-color: var(--critico); }
 
 /* ---------- Comparativa semanal ----------------------------------------- */
 
-.comparativa {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(178px, 1fr));
-  gap: 12px;
+/* Las tasas derivadas no se capturan: se separan visualmente de los
+   indicadores que sí vienen del registro diario. */
+#tablaComparativa .fila-derivada td:first-child {
+  font-style: italic;
+  color: var(--tinta-2);
 }
-
-.comp-tarjeta {
-  border: 1px solid var(--borde);
-  border-radius: var(--r-md);
-  padding: 13px 15px;
-  background: var(--superficie);
-}
+#tablaComparativa .fila-derivada { background: var(--superficie-2); }
 
 .comp-delta {
   display: inline-block;
@@ -683,15 +678,8 @@ input:invalid:not(:placeholder-shown) { border-color: var(--critico); }
 .comp-delta--mal    { color: var(--critico); background: var(--critico-lav); }
 .comp-delta--neutro { color: var(--tinta-3); background: var(--superficie-2); }
 
-.comp-antes {
-  margin-top: 6px;
-  font-size: .78rem;
-  color: var(--tinta-3);
-  font-variant-numeric: tabular-nums;
-}
-
-/* El selector vive en el encabezado de la tarjeta, no en la barra de filtros */
-.tarjeta-cab--fila .campo--sm { max-width: 230px; }
+/* El selector de línea necesita más ancho: los nombres con rol son largos */
+.filtros .campo--ancho select { min-width: 0; }
 
 /* ---------- Metas ------------------------------------------------------- */
 

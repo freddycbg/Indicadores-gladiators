@@ -4,7 +4,8 @@
 
 const App = {
   agentes: [],          // catálogo completo
-  registrosStats: [],   // resultado del filtro actual en Estadísticas
+  registrosStats: [],     // filtro actual del panel Resumen
+  registrosReportes: [],  // filtro actual del panel Reportes
   editando: null,       // registro cargado en el formulario, si lo hay
 };
 
@@ -55,9 +56,10 @@ function iniciarPestanas() {
       $$('.panel').forEach(p => p.classList.remove('is-activa'));
       $('#' + btn.dataset.panel).classList.add('is-activa');
 
-      if (btn.dataset.panel === 'panel-estadisticas') refrescarStats();
-      if (btn.dataset.panel === 'panel-metas')        refrescarMetas();
-      if (btn.dataset.panel === 'panel-agentes')      refrescarPanelAgentes();
+      if (btn.dataset.panel === 'panel-resumen')  refrescarResumen();
+      if (btn.dataset.panel === 'panel-reportes') refrescarReportes();
+      if (btn.dataset.panel === 'panel-metas')    refrescarMetas();
+      if (btn.dataset.panel === 'panel-agentes')  refrescarPanelAgentes();
     });
   });
 }
@@ -261,7 +263,8 @@ async function eliminarRegistro(reg) {
     aviso('Reporte eliminado.');
     limpiarFormulario({ conservarFecha: true });
     await pintarRecientes();
-    if ($('#panel-estadisticas').classList.contains('is-activa')) await refrescarStats();
+    if ($('#panel-resumen').classList.contains('is-activa'))  await refrescarResumen();
+    if ($('#panel-reportes').classList.contains('is-activa')) await refrescarReportes();
   } catch (err) {
     aviso(err.message, 'error');
   }
@@ -319,65 +322,118 @@ function celdaAcciones(reg) {
 }
 
 /* =========================================================================
-   PANEL ESTADÍSTICAS Y REPORTES
+   RESUMEN Y REPORTES
+   Dos paneles con intenciones distintas: Resumen responde "¿como vamos?"
+   y se mira de reojo; Reportes responde "dame los numeros de tal fecha".
+   Cada uno tiene sus propios filtros para que ninguno cargue con los del
+   otro.
    ========================================================================= */
 
-function iniciarStats() {
-  $('#s_hasta').value = hoyISO();
-  $('#s_desde').value = sumarDias(hoyISO(), -29);
+/** Llena un desplegable de periodo con los presets de config.js. */
+function llenarSelectPreset(select, porDefecto) {
+  select.innerHTML = '';
+  PRESETS_RANGO.forEach(p => select.appendChild(el('option', { value: p.key, text: p.label })));
+  select.value = porDefecto;
+}
 
-  $('#s_preset').addEventListener('change', e => {
-    const v = e.target.value;
-    if (v === 'custom') return;
-    $('#s_hasta').value = hoyISO();
-    $('#s_desde').value = v === 'mes'
-      ? hoyISO().slice(0, 8) + '01'
-      : sumarDias(hoyISO(), -(parseInt(v, 10) - 1));
-    refrescarStats();
+/** Etiqueta legible del rango, para subtitulos. */
+function textoRango(desde, hasta) {
+  if (desde === hasta) return fechaEtiqueta(desde);
+  return `${fechaCorta(desde)} — ${fechaCorta(hasta)} (${diasDelRango(desde, hasta)} días)`;
+}
+
+/* ---------- Panel Resumen ---------------------------------------------- */
+
+function iniciarResumen() {
+  llenarSelectPreset($('#rs_preset'), '30');
+  $('#rs_preset').addEventListener('change', refrescarResumen);
+  $('#rs_linea').addEventListener('change', e => {
+    localStorage.setItem(LS_LINEA_VISTA, e.target.value);
+    refrescarResumen();
   });
-
-  ['#s_desde', '#s_hasta'].forEach(sel => {
-    $(sel).addEventListener('change', () => {
-      $('#s_preset').value = 'custom';
-      refrescarStats();
-    });
-  });
-
-  $('#s_agente').addEventListener('change', refrescarStats);
-  $('#btnImprimir').addEventListener('click', () => window.print());
-  $('#btnCSV').addEventListener('click', exportarCSV);
 
   // Las gráficas se redibujan al cambiar de tema (los colores no son CSS).
   Charts.alCambiarTema(() => {
-    if ($('#panel-estadisticas').classList.contains('is-activa')) pintarGraficas();
+    if ($('#panel-resumen').classList.contains('is-activa')) pintarGraficas();
   });
 }
 
-async function refrescarStats() {
-  const desde    = $('#s_desde').value;
-  const hasta    = $('#s_hasta').value;
-  const agenteId = $('#s_agente').value;
+async function refrescarResumen() {
+  llenarSelectJerarquia($('#rs_linea'));
+  restaurarLineaVista($('#rs_linea'));
+
+  // El Resumen no ofrece fechas a mano: si no hay preset util, ultimos 30.
+  const rango = rangoDePreset($('#rs_preset').value) || rangoDePreset('30');
+  const alcance = alcanceDe($('#rs_linea').value);
+
+  const regs = await Store.listarRegistros({ desde: rango.desde, hasta: rango.hasta });
+  App.registrosStats = alcance ? regs.filter(r => alcance.has(r.agenteId)) : regs;
+
+  pintarKPIs();
+  pintarGraficas();
+  pintarTasas();
+  await refrescarComparativa($('#rs_linea').value);
+}
+
+/* ---------- Panel Reportes --------------------------------------------- */
+
+function iniciarReportes() {
+  llenarSelectPreset($('#rp_preset'), '30');
+  const inicial = rangoDePreset('30');
+  $('#rp_desde').value = inicial.desde;
+  $('#rp_hasta').value = inicial.hasta;
+
+  $('#rp_preset').addEventListener('change', e => {
+    const rango = rangoDePreset(e.target.value);
+    if (!rango) return;                       // 'custom': se respetan las fechas
+    $('#rp_desde').value = rango.desde;
+    $('#rp_hasta').value = rango.hasta;
+    refrescarReportes();
+  });
+
+  ['#rp_desde', '#rp_hasta'].forEach(sel => {
+    $(sel).addEventListener('change', () => {
+      $('#rp_preset').value = 'custom';
+      refrescarReportes();
+    });
+  });
+
+  $('#rp_linea').addEventListener('change', refrescarReportes);
+  $('#btnImprimir').addEventListener('click', () => window.print());
+  $('#btnCSV').addEventListener('click', exportarCSV);
+}
+
+async function refrescarReportes() {
+  llenarSelectJerarquia($('#rp_linea'));
+
+  const desde = $('#rp_desde').value;
+  const hasta = $('#rp_hasta').value;
 
   if (desde && hasta && desde > hasta) {
     aviso('La fecha "Desde" no puede ser posterior a "Hasta".', 'error');
     return;
   }
 
-  App.registrosStats = await Store.listarRegistros({ desde, hasta, agenteId });
+  const alcance = alcanceDe($('#rp_linea').value);
+  const regs = await Store.listarRegistros({ desde, hasta });
+  App.registrosReportes = alcance ? regs.filter(r => alcance.has(r.agenteId)) : regs;
 
-  await refrescarComparativa();
-  pintarKPIs();
-  pintarGraficas();
-  pintarTasas();
+  const persona = App.agentes.find(a => a.id === $('#rp_linea').value);
+  $('#reporteSub').textContent =
+    `${textoRango(desde, hasta)} · ` +
+    `${persona ? (persona.rol === 'Agente' ? persona.nombre : `línea de ${persona.nombre}`) : 'toda la organización'} · ` +
+    `${App.registrosReportes.length} registro(s)`;
+
   pintarReporte();
   pintarDetalle();
+}
 
-  const nombreAg = agenteId
-    ? (App.agentes.find(a => a.id === agenteId)?.nombre || 'agente')
-    : 'todos los agentes';
-  $('#reporteSub').textContent =
-    `${fechaCorta(desde)} — ${fechaCorta(hasta)} · ${nombreAg} · ` +
-    `${App.registrosStats.length} registro(s)`;
+/** Recupera la última línea elegida en este dispositivo. */
+function restaurarLineaVista(select) {
+  const guardada = localStorage.getItem(LS_LINEA_VISTA);
+  if (!select.value && guardada && [...select.options].some(o => o.value === guardada)) {
+    select.value = guardada;
+  }
 }
 
 /** Suma una métrica sobre un conjunto de registros. */
@@ -536,7 +592,7 @@ function pintarTasas() {
 function pintarReporte() {
   const tabla = $('#tablaReporte');
   tabla.innerHTML = '';
-  const filas = agruparPorAgente(App.registrosStats).sort((a, b) => b.alp - a.alp);
+  const filas = agruparPorAgente(App.registrosReportes).sort((a, b) => b.alp - a.alp);
 
   if (!filas.length) {
     tabla.appendChild(el('tbody', {}, [
@@ -567,7 +623,7 @@ function pintarReporte() {
   tabla.appendChild(el('tfoot', {}, [
     el('tr', {}, [
       el('td', { text: 'TOTAL' }),
-      el('td', { class: 'num', text: new Set(App.registrosStats.map(r => r.fecha)).size }),
+      el('td', { class: 'num', text: new Set(App.registrosReportes.map(r => r.fecha)).size }),
       ...CAMPOS.map(c => el('td', {
         class: 'num',
         text: fmt(filas.reduce((t, f) => t + f[c.key], 0), c.tipo),
@@ -580,7 +636,7 @@ function pintarReporte() {
 function pintarDetalle() {
   const tabla = $('#tablaDetalle');
   tabla.innerHTML = '';
-  const regs = App.registrosStats;
+  const regs = App.registrosReportes;
 
   if (!regs.length) {
     tabla.appendChild(el('tbody', {}, [
@@ -612,7 +668,7 @@ function pintarDetalle() {
 }
 
 function exportarCSV() {
-  const regs = App.registrosStats;
+  const regs = App.registrosReportes;
   if (!regs.length) return aviso('No hay datos para exportar.', 'error');
 
   const cab = ['Fecha', 'Agente', ...CAMPOS.map(c => c.corto)];
@@ -630,7 +686,7 @@ function exportarCSV() {
   const blob = new Blob(['﻿' + csv], { type: 'text/csv;charset=utf-8;' });
   const a = el('a', {
     href: URL.createObjectURL(blob),
-    download: `seguimiento_${$('#s_desde').value}_a_${$('#s_hasta').value}.csv`,
+    download: `seguimiento_${$('#rp_desde').value}_a_${$('#rp_hasta').value}.csv`,
   });
   document.body.appendChild(a);
   a.click();
@@ -647,40 +703,25 @@ function exportarCSV() {
 
 const LS_LINEA_VISTA = 'gt_linea_vista';
 
-function iniciarComparativa() {
-  $('#c_linea').addEventListener('change', e => {
-    localStorage.setItem(LS_LINEA_VISTA, e.target.value);
-    refrescarComparativa();
-  });
-}
-
-/** Suma los indicadores de la comparativa sobre un conjunto de registros. */
+/** Suma todos los indicadores del registro, mas las tasas derivadas. */
 function totalesComparativa(registros) {
-  const t = { alp: 0, app: 0, referidos: 0, noShow: 0 };
+  const t = {};
+  CAMPOS.forEach(c => { t[c.key] = 0; });
+
   for (const r of registros) {
-    t.alp       += Number(r.alp) || 0;
-    t.app       += Number(r.app) || 0;
-    t.referidos += Number(r.referidos) || 0;
-    t.noShow    += Number(r.noShow) || 0;
+    CAMPOS.forEach(c => { t[c.key] += Number(r[c.key]) || 0; });
   }
-  // Sin citas no hay tasa que reportar: null, no cero.
-  t.tasaNoShow = t.app ? (t.noShow / t.app) * 100 : null;
+
+  // Sin base no hay tasa que reportar: null, no cero.
+  t.tasaNoShow = t.app   ? (t.noShow / t.app) * 100      : null;
+  t.tasaCierre = t.press ? (t.pressSale / t.press) * 100 : null;
   return t;
 }
 
-async function refrescarComparativa() {
-  const sel = $('#c_linea');
-  llenarSelectJerarquia(sel);
-
-  // Restaurar la ultima seleccion de este dispositivo
-  const guardada = localStorage.getItem(LS_LINEA_VISTA);
-  if (guardada && [...sel.options].some(o => o.value === guardada) && !sel.value) {
-    sel.value = guardada;
-  }
-
+async function refrescarComparativa(lineaId) {
   const estaSemana = semanaActual();
   const anterior   = sumarDias(estaSemana, -7);
-  const alcance    = alcanceDe(sel.value);
+  const alcance    = alcanceDe(lineaId);
 
   const filtrar = regs => alcance ? regs.filter(r => alcance.has(r.agenteId)) : regs;
 
@@ -694,13 +735,12 @@ async function refrescarComparativa() {
 
   $('#comparativaAyuda').textContent =
     `${etiquetaSemana(estaSemana)} contra ${etiquetaSemana(anterior)}. ` +
-    `No depende de los filtros de arriba.`;
+    `Siempre semanal, al margen del periodo elegido arriba.`;
 
   // Cuanta gente hay realmente detras de estos numeros
-  const persona = App.agentes.find(a => a.id === sel.value);
-  const enAlcance = alcance
-    ? App.agentes.filter(a => alcance.has(a.id) && a.rol === 'Agente' && a.activo !== false).length
-    : App.agentes.filter(a => a.rol === 'Agente' && a.activo !== false).length;
+  const persona = App.agentes.find(a => a.id === lineaId);
+  const enAlcance = App.agentes.filter(
+    a => (!alcance || alcance.has(a.id)) && a.rol === 'Agente' && a.activo !== false).length;
   const reportaron = new Set(filtrar(regsAhora).map(r => r.agenteId)).size;
 
   $('#comparativaAlcance').textContent = persona && persona.rol === 'Agente'
@@ -711,35 +751,41 @@ async function refrescarComparativa() {
   pintarComparativa(ahora, antes);
 }
 
+/**
+ * Tabla en vez de tarjetas: con doce indicadores, doce tarjetas pesan
+ * demasiado y la gracia de la comparativa es recorrer la columna de
+ * variaciones de un vistazo.
+ */
 function pintarComparativa(ahora, antes) {
-  const cont = $('#comparativa');
-  cont.innerHTML = '';
+  const tabla = $('#tablaComparativa');
+  tabla.innerHTML = '';
 
-  COMPARATIVA_CAMPOS.forEach(c => {
+  const valor = (v, tipo) => v === null || v === undefined ? '—'
+    : tipo === 'porcentaje' ? v.toFixed(1) + '%'
+    : fmt(v, tipo);
+
+  tabla.appendChild(el('thead', {}, [
+    el('tr', {}, [
+      el('th', { text: 'Indicador' }),
+      el('th', { class: 'num', text: 'Esta semana' }),
+      el('th', { class: 'num', text: 'Semana pasada' }),
+      el('th', { text: 'Variación' }),
+    ]),
+  ]));
+
+  tabla.appendChild(el('tbody', {}, COMPARATIVA_CAMPOS.map(c => {
     const act = ahora[c.key];
     const ant = antes[c.key];
-    cont.appendChild(tarjetaComparativa(c, act, ant));
-  });
-}
+    const hayAct = act !== null && act !== undefined;
+    const hayAnt = ant !== null && ant !== undefined;
 
-function tarjetaComparativa(campo, actual, anterior) {
-  const hayActual   = actual   !== null && actual   !== undefined;
-  const hayAnterior = anterior !== null && anterior !== undefined;
-
-  const valorTexto = !hayActual ? '—'
-    : campo.tipo === 'porcentaje' ? actual.toFixed(1) + '%'
-    : fmt(actual, campo.tipo);
-
-  const antTexto = !hayAnterior ? '—'
-    : campo.tipo === 'porcentaje' ? anterior.toFixed(1) + '%'
-    : fmt(anterior, campo.tipo);
-
-  return el('div', { class: 'comp-tarjeta' }, [
-    el('div', { class: 'kpi-etq', text: campo.label }),
-    el('div', { class: 'kpi-val', text: valorTexto }),
-    delta(campo, actual, anterior, hayActual, hayAnterior),
-    el('div', { class: 'comp-antes', text: `Semana pasada: ${antTexto}` }),
-  ]);
+    return el('tr', { class: c.calculado ? 'fila-derivada' : '' }, [
+      el('td', { text: c.label }),
+      el('td', { class: 'num' + (hayAct && act ? '' : ' cero'), text: valor(act, c.tipo) }),
+      el('td', { class: 'num' + (hayAnt && ant ? '' : ' cero'), text: valor(ant, c.tipo) }),
+      el('td', {}, [delta(c, act, ant, hayAct, hayAnt)]),
+    ]);
+  })));
 }
 
 /**
@@ -1476,15 +1522,16 @@ function confirmar({ titulo, texto, etiquetaOk = 'Eliminar', conExtra = false })
 async function cargarAgentes() {
   App.agentes = await Store.listarAgentes();
   llenarSelectAgentes($('#f_agente'), { soloActivos: true });
-  llenarSelectAgentes($('#s_agente'), { soloActivos: false, incluirTodos: true });
+  llenarSelectJerarquia($('#rs_linea'));
+  llenarSelectJerarquia($('#rp_linea'));
 }
 
 async function iniciar() {
   iniciarTema();
   iniciarPestanas();
   iniciarFormRegistro();
-  iniciarStats();
-  iniciarComparativa();
+  iniciarResumen();
+  iniciarReportes();
   iniciarMetas();
   iniciarAgentes();
 
