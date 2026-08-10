@@ -16,7 +16,16 @@
 
 var HOJA_AGENTES   = 'Agentes';
 var HOJA_REGISTROS = 'Registros';
+var HOJA_METAS     = 'Metas';
 var HOJA_CONFIG    = 'Config';
+
+/* Metas semanales. La semana se identifica por su lunes (YYYY-MM-DD).
+   Las claves apuntan a campos del reporte diario, para poder comparar
+   meta contra real sin captura adicional. */
+var COL_METAS = ['id', 'semana', 'agenteId', 'agenteNombre',
+                 'alp', 'app', 'referidos', 'actualizado'];
+
+var METAS_CAMPOS = ['alp', 'app', 'referidos'];
 
 var COL_AGENTES = ['id', 'nombre', 'equipo', 'rol', 'reportaA', 'activo', 'creado'];
 
@@ -49,7 +58,7 @@ var METRICAS = ['app', 'press', 'pressSale', 'pressNoSale', 'callerCalls',
 var DIAS_EDICION_LIBRE = 7;
 
 /* Acciones que exigen PIN de administrador siempre */
-var SOLO_ADMIN = ['crearAgente', 'actualizarAgente', 'eliminarAgente'];
+var SOLO_ADMIN = ['crearAgente', 'actualizarAgente', 'eliminarAgente', 'guardarMetas'];
 
 /* =========================================================================
    PUNTOS DE ENTRADA HTTP
@@ -90,6 +99,8 @@ function despachar(accion, p) {
     case 'obtenerRegistro':  return obtenerRegistro(p.fecha, p.agenteId);
     case 'guardarRegistro':  return guardarRegistro(p.registro, p.pin);
     case 'eliminarRegistro': return eliminarRegistro(p.id, p.pin);
+    case 'listarMetas':      return listarMetas(p);
+    case 'guardarMetas':     return guardarMetas(p.metas);
     case 'validarAdmin':     return esPinValido(p.pinPrueba);
     default: throw new Error('Acción desconocida: ' + accion);
   }
@@ -551,6 +562,107 @@ function eliminarRegistro(id, pin) {
 }
 
 /* =========================================================================
+   METAS SEMANALES
+   ========================================================================= */
+
+function normalizarMeta(m) {
+  var salida = {
+    id:           String(m.id),
+    semana:       aFechaISO(m.semana),
+    agenteId:     String(m.agenteId),
+    agenteNombre: String(m.agenteNombre || ''),
+  };
+  for (var i = 0; i < METAS_CAMPOS.length; i++) {
+    salida[METAS_CAMPOS[i]] = Number(m[METAS_CAMPOS[i]]) || 0;
+  }
+  return salida;
+}
+
+function listarMetas(filtro) {
+  var metas = leerTodo(HOJA_METAS, COL_METAS).map(normalizarMeta);
+
+  if (filtro && filtro.semana) {
+    metas = metas.filter(function (m) { return m.semana === filtro.semana; });
+  }
+  if (filtro && filtro.desde) {
+    metas = metas.filter(function (m) { return m.semana >= filtro.desde; });
+  }
+  if (filtro && filtro.hasta) {
+    metas = metas.filter(function (m) { return m.semana <= filtro.hasta; });
+  }
+  return metas;
+}
+
+/**
+ * Guarda varias metas de una vez: la tabla se edita completa y se manda
+ * junta, asi una semana de 30 agentes es una sola llamada y no treinta.
+ * Una meta con los tres valores en cero se elimina.
+ */
+function guardarMetas(lista) {
+  return conBloqueo(function () {
+    if (!lista || !lista.length) return { guardadas: 0, borradas: 0 };
+
+    var hj = hoja(HOJA_METAS, COL_METAS);
+    var cols = encabezados(hj);
+    var existentes = leerTodo(HOJA_METAS, COL_METAS);
+
+    var guardadas = 0;
+    var aBorrar = [];
+
+    for (var i = 0; i < lista.length; i++) {
+      var entrada = lista[i];
+      var semana = aFechaISO(entrada.semana);
+      var agenteId = String(entrada.agenteId || '');
+      if (!semana || !agenteId) continue;
+
+      var previo = null;
+      for (var j = 0; j < existentes.length; j++) {
+        if (aFechaISO(existentes[j].semana) === semana &&
+            String(existentes[j].agenteId) === agenteId) {
+          previo = existentes[j];
+          break;
+        }
+      }
+
+      var vacia = true;
+      for (var k = 0; k < METAS_CAMPOS.length; k++) {
+        if (Number(entrada[METAS_CAMPOS[k]]) > 0) { vacia = false; break; }
+      }
+
+      if (vacia) {
+        if (previo) aBorrar.push(previo._fila);
+        continue;
+      }
+
+      var fila = {};
+      if (previo) for (var c = 0; c < cols.length; c++) fila[cols[c]] = previo[cols[c]];
+
+      fila.id           = previo ? previo.id : nuevoId();
+      fila.semana       = semana;
+      fila.agenteId     = agenteId;
+      fila.agenteNombre = String(entrada.agenteNombre || '');
+      fila.actualizado  = ahora();
+      for (var n = 0; n < METAS_CAMPOS.length; n++) {
+        fila[METAS_CAMPOS[n]] = Number(entrada[METAS_CAMPOS[n]]) || 0;
+      }
+
+      if (previo) {
+        hj.getRange(previo._fila, 1, 1, cols.length).setValues([aFila(fila, cols)]);
+      } else {
+        hj.appendRow(aFila(fila, cols));
+      }
+      guardadas++;
+    }
+
+    // De abajo hacia arriba: borrar filas no desplaza las que faltan
+    aBorrar.sort(function (a, b) { return b - a; });
+    for (var d = 0; d < aBorrar.length; d++) hj.deleteRow(aBorrar[d]);
+
+    return { guardadas: guardadas, borradas: aBorrar.length };
+  });
+}
+
+/* =========================================================================
    MANTENIMIENTO
    ========================================================================= */
 
@@ -562,7 +674,9 @@ function eliminarRegistro(id, pin) {
 function sincronizarColumnas() {
   var informe = [];
 
-  [[HOJA_REGISTROS, COL_REGISTROS], [HOJA_AGENTES, COL_AGENTES]].forEach(function (par) {
+  [[HOJA_REGISTROS, COL_REGISTROS],
+   [HOJA_AGENTES, COL_AGENTES],
+   [HOJA_METAS, COL_METAS]].forEach(function (par) {
     var hj = hoja(par[0], par[1]);
     var actuales = encabezados(hj);
     var agregadas = [];
@@ -606,16 +720,19 @@ function sincronizarColumnas() {
 function instalar() {
   hoja(HOJA_AGENTES, COL_AGENTES);
   hoja(HOJA_REGISTROS, COL_REGISTROS);
+  hoja(HOJA_METAS, COL_METAS);
   var cfg = hoja(HOJA_CONFIG, ['clave', 'valor']);
   if (cfg.getLastRow() < 2) cfg.appendRow(['adminPin', '1010']);
 
-  // La columna de fecha como texto plano evita sorpresas de zona horaria.
-  var hr = libro().getSheetByName(HOJA_REGISTROS);
-  var colFecha = encabezados(hr).indexOf('fecha') + 1;
-  if (colFecha > 0) hr.getRange(2, colFecha, hr.getMaxRows() - 1).setNumberFormat('@');
+  // Las columnas de fecha como texto plano evitan sorpresas de zona horaria.
+  [[HOJA_REGISTROS, 'fecha'], [HOJA_METAS, 'semana']].forEach(function (par) {
+    var hj = libro().getSheetByName(par[0]);
+    var col = encabezados(hj).indexOf(par[1]) + 1;
+    if (col > 0) hj.getRange(2, col, hj.getMaxRows() - 1).setNumberFormat('@');
+  });
 
   SpreadsheetApp.getUi().alert(
-    'Listo. Se crearon las hojas Agentes, Registros y Config.\n\n' +
+    'Listo. Se crearon las hojas Agentes, Registros, Metas y Config.\n\n' +
     'El PIN de administrador está en la hoja Config — cámbialo.'
   );
 }

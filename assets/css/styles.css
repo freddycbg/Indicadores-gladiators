@@ -653,6 +653,58 @@ input:invalid:not(:placeholder-shown) { border-color: var(--critico); }
 .marca-estado--on  { background: var(--acento-lavado); color: var(--acento-alto); }
 .marca-estado--off { background: var(--superficie-2);  color: var(--tinta-3); }
 
+/* ---------- Metas ------------------------------------------------------- */
+
+.paso-semana {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 42px;
+}
+.paso-semana span {
+  font-size: .92rem;
+  font-weight: 600;
+  min-width: 132px;
+  text-align: center;
+  font-variant-numeric: tabular-nums;
+}
+.paso-semana .btn-mini {
+  font-size: 1.1rem;
+  line-height: 1;
+  padding: 6px 11px;
+}
+
+/* Celdas numéricas editables: el campo llena la celda pero sin parecer un
+   formulario, para que la tabla se siga leyendo como tabla. */
+.celda-num {
+  width: 92px;
+  /* Sin este minimo la tabla comprime el campo hasta ~58px al angostarse,
+     y un ALP de cinco cifras deja de caber. */
+  min-width: 84px;
+  min-height: 32px;
+  padding: 5px 8px;
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+  border-color: var(--borde);
+  background: transparent;
+}
+.celda-num:hover:not(:disabled) { border-color: var(--borde-campo); }
+.celda-num:disabled { border-color: transparent; color: var(--tinta-3); }
+
+.tabla--editable td { padding-top: 5px; padding-bottom: 5px; }
+
+.fila-editada { background: var(--acento-lavado); }
+.fila-editada .celda-num { border-color: var(--acento); }
+
+.pct {
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+
+.tenue { color: var(--tinta-3); }
+
+.aviso-celda { color: var(--critico); font-weight: 600; cursor: help; }
+
 /* ---------- Roles y organigrama ----------------------------------------- */
 
 .marca-rol {

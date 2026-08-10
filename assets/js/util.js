@@ -37,6 +37,49 @@ function fechaEtiqueta(iso) {
   return `${dias[f.getDay()]} ${pad2(d)} ${meses[m - 1]}`;
 }
 
+/* ---------- Semanas (siempre de lunes a domingo) ------------------------ */
+
+/** Lunes de la semana a la que pertenece una fecha ISO. */
+function lunesDeLaSemana(iso) {
+  const [a, m, d] = iso.split('-').map(Number);
+  const f = new Date(a, m - 1, d);
+  const diaLunes0 = (f.getDay() + 6) % 7;      // 0 = lunes … 6 = domingo
+  f.setDate(f.getDate() - diaLunes0);
+  return `${f.getFullYear()}-${pad2(f.getMonth() + 1)}-${pad2(f.getDate())}`;
+}
+
+/** Lunes de la semana en curso. */
+function semanaActual() {
+  return lunesDeLaSemana(hoyISO());
+}
+
+/** Domingo que cierra la semana que empieza en ese lunes. */
+function domingoDeLaSemana(lunesISO) {
+  return sumarDias(lunesISO, 6);
+}
+
+/** "2026-08-03" → "3 – 9 ago 2026"  ·  cruzando mes → "27 jul – 2 ago 2026" */
+function etiquetaSemana(lunesISO) {
+  const meses = ['ene', 'feb', 'mar', 'abr', 'may', 'jun',
+                 'jul', 'ago', 'sep', 'oct', 'nov', 'dic'];
+  const dom = domingoDeLaSemana(lunesISO);
+  const [aL, mL, dL] = lunesISO.split('-').map(Number);
+  const [aD, mD, dD] = dom.split('-').map(Number);
+
+  if (mL === mD && aL === aD) return `${dL} – ${dD} ${meses[mD - 1]} ${aD}`;
+  if (aL === aD)              return `${dL} ${meses[mL - 1]} – ${dD} ${meses[mD - 1]} ${aD}`;
+  return `${dL} ${meses[mL - 1]} ${aL} – ${dD} ${meses[mD - 1]} ${aD}`;
+}
+
+/** Texto relativo: "Semana actual", "Semana pasada", o vacío. */
+function relativoSemana(lunesISO) {
+  const actual = semanaActual();
+  if (lunesISO === actual)                  return 'Semana actual';
+  if (lunesISO === sumarDias(actual, -7))   return 'Semana pasada';
+  if (lunesISO === sumarDias(actual, 7))    return 'Próxima semana';
+  return '';
+}
+
 /** Días transcurridos entre una fecha ISO y hoy. Negativo si es futura. */
 function diasDesde(iso) {
   const [a, m, d] = iso.split('-').map(Number);

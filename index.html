@@ -29,6 +29,7 @@
   <nav class="pestanas" role="tablist" aria-label="Secciones">
     <button class="pestana is-activa" role="tab" data-panel="panel-registro"     aria-selected="true">Registro</button>
     <button class="pestana"           role="tab" data-panel="panel-estadisticas" aria-selected="false">Estadísticas y Reportes</button>
+    <button class="pestana"           role="tab" data-panel="panel-metas"        aria-selected="false">Metas</button>
     <button class="pestana"           role="tab" data-panel="panel-agentes"      aria-selected="false">Agentes</button>
   </nav>
 </header>
@@ -171,6 +172,65 @@
       </div>
       <div class="tabla-scroll">
         <table class="tabla" id="tablaDetalle"></table>
+      </div>
+    </div>
+  </section>
+
+  <!-- ================= PANEL: METAS ================= -->
+  <section class="panel" id="panel-metas" role="tabpanel">
+
+    <div class="filtros" id="filtrosMetas">
+      <div class="campo campo--sm">
+        <label for="m_semana">Semana</label>
+        <div class="paso-semana">
+          <button type="button" class="btn-mini" id="btnSemanaAnt" aria-label="Semana anterior">‹</button>
+          <span id="etqSemana">—</span>
+          <button type="button" class="btn-mini" id="btnSemanaSig" aria-label="Semana siguiente">›</button>
+        </div>
+      </div>
+      <div class="campo campo--sm">
+        <label for="m_linea">Línea</label>
+        <select id="m_linea"><option value="">Toda la organización</option></select>
+      </div>
+      <div class="filtros-acc">
+        <button class="btn btn-suave" id="btnSemanaHoy" type="button">Ir a la semana actual</button>
+        <button class="btn btn-suave" id="btnCopiarMetas" type="button">Copiar semana anterior</button>
+      </div>
+    </div>
+
+    <!-- Resumen por línea: los totales se suman solos hacia arriba -->
+    <div class="tarjeta">
+      <div class="tarjeta-cab">
+        <h2>Resumen por línea</h2>
+        <p class="ayuda">
+          La meta de un SA, GA o MGA es la suma de las metas de los agentes que
+          cuelgan de su línea. No se captura a mano en ningún nivel superior.
+        </p>
+      </div>
+      <div class="tabla-scroll">
+        <table class="tabla" id="tablaResumenMetas"></table>
+      </div>
+    </div>
+
+    <div class="tarjeta">
+      <div class="tarjeta-cab tarjeta-cab--fila">
+        <div>
+          <h2>Metas por agente</h2>
+          <p class="ayuda" id="metasAyuda"></p>
+        </div>
+        <div class="tarjeta-acc" id="metasAcciones" hidden>
+          <button class="btn btn-primario" id="btnGuardarMetas" type="button">Guardar cambios</button>
+          <button class="btn btn-suave" id="btnDescartarMetas" type="button">Descartar</button>
+        </div>
+      </div>
+
+      <div class="nota nota--bloqueada" id="metasSoloLectura" hidden>
+        Solo un administrador puede fijar metas. Entra con tu PIN en la pestaña
+        Agentes para poder editarlas.
+      </div>
+
+      <div class="tabla-scroll">
+        <table class="tabla tabla--editable" id="tablaMetas"></table>
       </div>
     </div>
   </section>

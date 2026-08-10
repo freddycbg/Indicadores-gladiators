@@ -120,6 +120,7 @@ const Store = (() => {
 
   const LS_AGENTES   = 'gt_agentes_v1';
   const LS_REGISTROS = 'gt_registros_v1';
+  const LS_METAS     = 'gt_metas_v1';
 
   function leerLS(clave, porDefecto) {
     try {
@@ -221,8 +222,31 @@ const Store = (() => {
       }
     }
 
+    /* Metas de las ultimas 6 semanas. Se dejan dos agentes sin meta a
+       proposito, para poder probar el caso "sin meta". */
+    const metas = [];
+    const sinMeta = new Set(['a17', 'a19']);
+    const deCampo = agentes.filter(a => a.rol === 'Agente' && !sinMeta.has(a.id));
+
+    for (let s = 5; s >= 0; s--) {
+      const semana = sumarDias(semanaActual(), -7 * s);
+      for (const ag of deCampo) {
+        metas.push({
+          id: nuevoId(),
+          semana,
+          agenteId: ag.id,
+          agenteNombre: ag.nombre,
+          alp:       entre(6, 14) * 1000,
+          app:       entre(18, 30),
+          referidos: entre(8, 18),
+          actualizado: semana,
+        });
+      }
+    }
+
     escribirLS(LS_AGENTES, agentes);
     escribirLS(LS_REGISTROS, registros);
+    escribirLS(LS_METAS, metas);
   }
 
   const demo = {
@@ -344,6 +368,53 @@ const Store = (() => {
       return true;
     },
 
+    /* ---- Metas -------------------------------------------------------- */
+
+    async listarMetas({ semana, desde, hasta } = {}) {
+      let metas = leerLS(LS_METAS, []);
+      if (semana) metas = metas.filter(m => m.semana === semana);
+      if (desde)  metas = metas.filter(m => m.semana >= desde);
+      if (hasta)  metas = metas.filter(m => m.semana <= hasta);
+      return metas;
+    },
+
+    /**
+     * Guarda varias metas de una vez (la tabla se edita completa y se
+     * manda junta). Una meta por agente y semana: si ya existe, se
+     * reemplaza. Una meta con los tres valores en cero se borra, que es
+     * como se quita una meta desde la tabla.
+     */
+    async guardarMetas(lista) {
+      const metas = leerLS(LS_METAS, []);
+      let guardadas = 0, borradas = 0;
+
+      for (const entrada of lista) {
+        const i = metas.findIndex(
+          m => m.semana === entrada.semana && m.agenteId === entrada.agenteId);
+        const vacia = METAS_CAMPOS.every(c => !Number(entrada[c.key]));
+
+        if (vacia) {
+          if (i >= 0) { metas.splice(i, 1); borradas++; }
+          continue;
+        }
+
+        const fila = {
+          semana: entrada.semana,
+          agenteId: entrada.agenteId,
+          agenteNombre: entrada.agenteNombre || '',
+          actualizado: new Date().toISOString(),
+        };
+        METAS_CAMPOS.forEach(c => { fila[c.key] = Number(entrada[c.key]) || 0; });
+
+        if (i >= 0) metas[i] = { ...metas[i], ...fila };
+        else        metas.push({ ...fila, id: nuevoId() });
+        guardadas++;
+      }
+
+      escribirLS(LS_METAS, metas);
+      return { guardadas, borradas };
+    },
+
     async validarAdmin(pin) {
       return pin === CONFIG.ADMIN_PIN_DEMO;
     },
@@ -351,6 +422,7 @@ const Store = (() => {
     async reiniciarDemo() {
       localStorage.removeItem(LS_AGENTES);
       localStorage.removeItem(LS_REGISTROS);
+      localStorage.removeItem(LS_METAS);
       sembrarDemo();
       return true;
     },
@@ -386,6 +458,8 @@ const Store = (() => {
     obtenerRegistro:   (c)            => llamar('obtenerRegistro', c),
     guardarRegistro:   (r)            => llamar('guardarRegistro', { registro: r }),
     eliminarRegistro:  (id)           => llamar('eliminarRegistro', { id }),
+    listarMetas:       (f = {})       => llamar('listarMetas', f),
+    guardarMetas:      (lista)        => llamar('guardarMetas', { metas: lista }),
     validarAdmin:      (pin)          => llamar('validarAdmin', { pinPrueba: pin }),
     reiniciarDemo:     async ()       => { throw new Error('No disponible en modo Sheets.'); },
   };

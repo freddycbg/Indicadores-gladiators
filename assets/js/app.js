@@ -56,6 +56,7 @@ function iniciarPestanas() {
       $('#' + btn.dataset.panel).classList.add('is-activa');
 
       if (btn.dataset.panel === 'panel-estadisticas') refrescarStats();
+      if (btn.dataset.panel === 'panel-metas')        refrescarMetas();
       if (btn.dataset.panel === 'panel-agentes')      refrescarPanelAgentes();
     });
   });
@@ -637,6 +638,346 @@ function exportarCSV() {
 }
 
 /* =========================================================================
+   PANEL METAS
+   La captura es una tabla editable: fijar 30+ metas de una en una en un
+   dialogo seria impracticable. Los cambios quedan en memoria hasta que se
+   pulsa Guardar.
+   ========================================================================= */
+
+function iniciarMetas() {
+  App.semanaMetas = semanaActual();
+  App.metasEditadas = new Map();   // agenteId -> { alp, app, referidos }
+
+  $('#btnSemanaAnt').addEventListener('click', () => moverSemana(-7));
+  $('#btnSemanaSig').addEventListener('click', () => moverSemana(+7));
+  $('#btnSemanaHoy').addEventListener('click', () => {
+    if (!confirmarDescarte()) return;
+    App.semanaMetas = semanaActual();
+    refrescarMetas();
+  });
+
+  $('#m_linea').addEventListener('change', refrescarMetas);
+  $('#btnGuardarMetas').addEventListener('click', guardarMetas);
+  $('#btnDescartarMetas').addEventListener('click', () => {
+    App.metasEditadas.clear();
+    refrescarMetas();
+  });
+  $('#btnCopiarMetas').addEventListener('click', copiarMetasSemanaAnterior);
+}
+
+function moverSemana(dias) {
+  if (!confirmarDescarte()) return;
+  App.semanaMetas = sumarDias(App.semanaMetas, dias);
+  refrescarMetas();
+}
+
+/** Evita perder ediciones sin guardar al cambiar de semana. */
+function confirmarDescarte() {
+  if (!App.metasEditadas.size) return true;
+  const ok = window.confirm(
+    `Tienes ${App.metasEditadas.size} meta(s) sin guardar. ¿Descartar los cambios?`);
+  if (ok) App.metasEditadas.clear();
+  return ok;
+}
+
+/** Personas que pueden encabezar una línea (todo lo que no sea Agente). */
+function llenarSelectLinea(select) {
+  const previo = select.value;
+  select.innerHTML = '';
+  select.appendChild(el('option', { value: '', text: 'Toda la organización' }));
+
+  Jerarquia.aplanar(App.agentes)
+    .filter(({ agente }) => agente.rol !== 'Agente')
+    .forEach(({ agente, nivel }) => {
+      select.appendChild(el('option', {
+        value: agente.id,
+        text: `${'　'.repeat(nivel)}${agente.nombre} · ${agente.rol}`,
+      }));
+    });
+
+  if ([...select.options].some(o => o.value === previo)) select.value = previo;
+}
+
+/** Agentes de campo dentro de la línea elegida (o todos si no hay línea). */
+function agentesDeLaLinea(lineaId) {
+  const base = lineaId
+    ? Jerarquia.descendientes(App.agentes, lineaId)
+    : App.agentes;
+  return base
+    .filter(a => a.rol === 'Agente' && a.activo !== false)
+    .sort((a, b) => a.nombre.localeCompare(b.nombre, 'es'));
+}
+
+async function refrescarMetas() {
+  const esAdmin = Sesion.esAdmin();
+
+  llenarSelectLinea($('#m_linea'));
+  $('#etqSemana').textContent = etiquetaSemana(App.semanaMetas);
+  const rel = relativoSemana(App.semanaMetas);
+  $('#metasAyuda').textContent = rel
+    ? `${rel} · ${fechaCorta(App.semanaMetas)} al ${fechaCorta(domingoDeLaSemana(App.semanaMetas))}`
+    : `${fechaCorta(App.semanaMetas)} al ${fechaCorta(domingoDeLaSemana(App.semanaMetas))}`;
+
+  $('#metasSoloLectura').hidden = esAdmin;
+  $('#btnCopiarMetas').disabled = !esAdmin;
+
+  const metas = await Store.listarMetas({ semana: App.semanaMetas });
+  App.metasSemana = new Map(metas.map(m => [m.agenteId, m]));
+
+  // Lo realmente logrado en esa semana, para comparar contra la meta
+  const registros = await Store.listarRegistros({
+    desde: App.semanaMetas,
+    hasta: domingoDeLaSemana(App.semanaMetas),
+  });
+  App.realSemana = new Map();
+  for (const r of registros) {
+    if (!App.realSemana.has(r.agenteId)) {
+      App.realSemana.set(r.agenteId, Object.fromEntries(METAS_CAMPOS.map(c => [c.key, 0])));
+    }
+    const acc = App.realSemana.get(r.agenteId);
+    METAS_CAMPOS.forEach(c => { acc[c.key] += Number(r[c.key]) || 0; });
+  }
+
+  pintarTablaMetas(esAdmin);
+  pintarResumenMetas();
+  actualizarBotonesMetas();
+}
+
+/** Meta efectiva de un agente: la editada si la hay, si no la guardada. */
+function metaDe(agenteId) {
+  if (App.metasEditadas.has(agenteId)) return App.metasEditadas.get(agenteId);
+  const m = App.metasSemana.get(agenteId);
+  if (!m) return null;
+  return Object.fromEntries(METAS_CAMPOS.map(c => [c.key, Number(m[c.key]) || 0]));
+}
+
+function pintarTablaMetas(esAdmin) {
+  const tabla = $('#tablaMetas');
+  tabla.innerHTML = '';
+  const agentes = agentesDeLaLinea($('#m_linea').value);
+
+  if (!agentes.length) {
+    tabla.appendChild(el('tbody', {}, [
+      el('tr', {}, [el('td', { class: 'vacio', text: 'No hay agentes activos en esa línea.' })]),
+    ]));
+    return;
+  }
+
+  tabla.appendChild(el('thead', {}, [
+    el('tr', {}, [
+      el('th', { text: 'Agente' }),
+      el('th', { text: 'Reporta a' }),
+      ...METAS_CAMPOS.map(c => el('th', { class: 'num', text: 'Meta ' + c.corto })),
+      ...METAS_CAMPOS.map(c => el('th', { class: 'num', text: 'Real ' + c.corto })),
+      el('th', { text: 'Estado' }),
+    ]),
+  ]));
+
+  const nombrePorId = Object.fromEntries(App.agentes.map(a => [a.id, a.nombre]));
+
+  tabla.appendChild(el('tbody', {}, agentes.map(ag => {
+    const meta = metaDe(ag.id);
+    const real = App.realSemana.get(ag.id) || {};
+    const editada = App.metasEditadas.has(ag.id);
+
+    return el('tr', { class: editada ? 'fila-editada' : '' }, [
+      el('td', { text: ag.nombre }),
+      el('td', { class: 'tenue', text: nombrePorId[ag.reportaA] || '—' }),
+
+      ...METAS_CAMPOS.map(c => el('td', { class: 'num' }, [
+        el('input', {
+          type: 'number', min: '0',
+          step: c.tipo === 'moneda' ? '0.01' : '1',
+          inputmode: c.tipo === 'moneda' ? 'decimal' : 'numeric',
+          class: 'celda-num',
+          placeholder: '—',
+          value: meta && meta[c.key] ? meta[c.key] : '',
+          disabled: !esAdmin,
+          'data-agente': ag.id,
+          'data-campo': c.key,
+          oninput: alEditarMeta,
+        }),
+      ])),
+
+      ...METAS_CAMPOS.map(c => el('td', {
+        class: 'num' + (real[c.key] ? '' : ' cero'),
+        text: fmt(real[c.key] || 0, c.tipo),
+      })),
+
+      el('td', {}, [estadoDeMeta(meta, real)]),
+    ]);
+  })));
+}
+
+/**
+ * Estado de un agente frente a su meta. Sin meta no es 0%: es "sin meta",
+ * y queda fuera de todo promedio.
+ */
+function estadoDeMeta(meta, real) {
+  if (!meta) return el('span', { class: 'marca-estado marca-estado--off', text: 'Sin meta' });
+  const pct = cumplimientoPromedio(meta, real);
+  if (pct === null) return el('span', { class: 'marca-estado marca-estado--off', text: 'Sin meta' });
+  return el('span', { class: 'pct', text: pct.toFixed(0) + '%' });
+}
+
+/**
+ * Promedio del % de cumplimiento entre los indicadores que tienen meta.
+ * Devuelve null si el agente no tiene ninguna meta distinta de cero.
+ */
+function cumplimientoPromedio(meta, real) {
+  if (!meta) return null;
+  const pcts = METAS_CAMPOS
+    .filter(c => Number(meta[c.key]) > 0)
+    .map(c => ((Number(real && real[c.key]) || 0) / Number(meta[c.key])) * 100);
+  if (!pcts.length) return null;
+  return pcts.reduce((t, p) => t + p, 0) / pcts.length;
+}
+
+function alEditarMeta(e) {
+  const agenteId = e.target.dataset.agente;
+  const campo    = e.target.dataset.campo;
+
+  const actual = App.metasEditadas.get(agenteId)
+    || metaDe(agenteId)
+    || Object.fromEntries(METAS_CAMPOS.map(c => [c.key, 0]));
+
+  const copia = { ...actual };
+  const raw = e.target.value.trim();
+  copia[campo] = raw === '' ? 0 : nDecimal(raw);
+
+  App.metasEditadas.set(agenteId, copia);
+  e.target.closest('tr').classList.add('fila-editada');
+  actualizarBotonesMetas();
+  pintarResumenMetas();
+}
+
+function actualizarBotonesMetas() {
+  const n = App.metasEditadas.size;
+  $('#metasAcciones').hidden = !Sesion.esAdmin() || n === 0;
+  $('#btnGuardarMetas').textContent = n
+    ? `Guardar ${n} cambio(s)` : 'Guardar cambios';
+}
+
+/** Suma de metas y de real por cada línea, en orden de organigrama. */
+function pintarResumenMetas() {
+  const tabla = $('#tablaResumenMetas');
+  tabla.innerHTML = '';
+
+  const lineas = Jerarquia.aplanar(App.agentes)
+    .filter(({ agente }) => agente.rol !== 'Agente');
+
+  if (!lineas.length) {
+    tabla.appendChild(el('tbody', {}, [
+      el('tr', {}, [el('td', { class: 'vacio', text: 'No hay líneas definidas en el organigrama.' })]),
+    ]));
+    return;
+  }
+
+  tabla.appendChild(el('thead', {}, [
+    el('tr', {}, [
+      el('th', { text: 'Línea' }),
+      el('th', { class: 'num', text: 'Agentes' }),
+      el('th', { class: 'num', text: 'Con meta' }),
+      ...METAS_CAMPOS.map(c => el('th', { class: 'num', text: 'Meta ' + c.corto })),
+      ...METAS_CAMPOS.map(c => el('th', { class: 'num', text: 'Real ' + c.corto })),
+    ]),
+  ]));
+
+  tabla.appendChild(el('tbody', {}, lineas.map(({ agente, nivel }) => {
+    const suyos = Jerarquia.descendientes(App.agentes, agente.id)
+      .filter(a => a.rol === 'Agente' && a.activo !== false);
+
+    const conMeta = suyos.filter(a => metaDe(a.id));
+    const sumaMeta = Object.fromEntries(METAS_CAMPOS.map(c => [c.key, 0]));
+    const sumaReal = Object.fromEntries(METAS_CAMPOS.map(c => [c.key, 0]));
+
+    suyos.forEach(a => {
+      const m = metaDe(a.id);
+      const r = App.realSemana.get(a.id) || {};
+      METAS_CAMPOS.forEach(c => {
+        if (m) sumaMeta[c.key] += Number(m[c.key]) || 0;
+        sumaReal[c.key] += Number(r[c.key]) || 0;
+      });
+    });
+
+    const faltan = suyos.length - conMeta.length;
+
+    return el('tr', {}, [
+      el('td', { style: `padding-left:${11 + nivel * 18}px` }, [
+        el('span', { class: 'marca-rol', text: agente.rol }),
+        document.createTextNode(' ' + agente.nombre),
+      ]),
+      el('td', { class: 'num', text: suyos.length }),
+      el('td', {
+        class: 'num' + (faltan ? ' aviso-celda' : ''),
+        title: faltan ? `${faltan} agente(s) sin meta esta semana` : '',
+        text: `${conMeta.length}/${suyos.length}`,
+      }),
+      ...METAS_CAMPOS.map(c => el('td', {
+        class: 'num' + (sumaMeta[c.key] ? '' : ' cero'),
+        text: fmt(sumaMeta[c.key], c.tipo),
+      })),
+      ...METAS_CAMPOS.map(c => el('td', {
+        class: 'num' + (sumaReal[c.key] ? '' : ' cero'),
+        text: fmt(sumaReal[c.key], c.tipo),
+      })),
+    ]);
+  })));
+}
+
+async function guardarMetas() {
+  if (!App.metasEditadas.size) return;
+  const btn = $('#btnGuardarMetas');
+  btn.disabled = true;
+
+  const nombrePorId = Object.fromEntries(App.agentes.map(a => [a.id, a.nombre]));
+  const lista = [...App.metasEditadas.entries()].map(([agenteId, valores]) => ({
+    semana: App.semanaMetas,
+    agenteId,
+    agenteNombre: nombrePorId[agenteId] || '',
+    ...valores,
+  }));
+
+  try {
+    const { guardadas, borradas } = await Store.guardarMetas(lista);
+    App.metasEditadas.clear();
+    await refrescarMetas();
+    aviso(borradas
+      ? `${guardadas} meta(s) guardada(s), ${borradas} eliminada(s).`
+      : `${guardadas} meta(s) guardada(s).`);
+  } catch (err) {
+    aviso(err.message, 'error');
+  } finally {
+    btn.disabled = false;
+  }
+}
+
+/** Precarga la tabla con las metas de la semana anterior, sin guardar. */
+async function copiarMetasSemanaAnterior() {
+  const anterior = await Store.listarMetas({ semana: sumarDias(App.semanaMetas, -7) });
+  if (!anterior.length) {
+    return aviso('La semana anterior no tiene metas cargadas.', 'error');
+  }
+
+  const visibles = new Set(agentesDeLaLinea($('#m_linea').value).map(a => a.id));
+  let copiadas = 0;
+
+  anterior.forEach(m => {
+    if (!visibles.has(m.agenteId)) return;
+    App.metasEditadas.set(m.agenteId,
+      Object.fromEntries(METAS_CAMPOS.map(c => [c.key, Number(m[c.key]) || 0])));
+    copiadas++;
+  });
+
+  pintarTablaMetas(true);
+  pintarResumenMetas();
+  actualizarBotonesMetas();
+  aviso(copiadas
+    ? `${copiadas} meta(s) copiadas. Revísalas y pulsa Guardar.`
+    : 'No hay metas de la semana anterior para esta línea.', copiadas ? 'ok' : 'error');
+}
+
+/* =========================================================================
    PANEL AGENTES (ADMINISTRADOR)
    ========================================================================= */
 
@@ -650,9 +991,10 @@ function iniciarAgentes() {
       Sesion.entrar(pin);
       $('#a_pin').value = '';
       await refrescarPanelAgentes();
-      // Con sesión abierta se puede corregir cualquier fecha: repintar tablas.
+      // Con sesión abierta cambian los permisos: repintar lo afectado.
       await pintarRecientes();
-      aviso('Sesión de administrador iniciada. Ya puedes corregir cualquier fecha.');
+      await refrescarMetas();
+      aviso('Sesión de administrador iniciada. Ya puedes corregir cualquier fecha y fijar metas.');
     } catch (err) {
       aviso(err.message, 'error');
     }
@@ -660,8 +1002,10 @@ function iniciarAgentes() {
 
   $('#btnSalirAdmin').addEventListener('click', async () => {
     Sesion.salir();
+    App.metasEditadas.clear();
     await refrescarPanelAgentes();
     await pintarRecientes();
+    await refrescarMetas();
     limpiarFormulario();
   });
 
@@ -978,6 +1322,7 @@ async function iniciar() {
   iniciarPestanas();
   iniciarFormRegistro();
   iniciarStats();
+  iniciarMetas();
   iniciarAgentes();
 
   $('#marcaEquipo').textContent = CONFIG.EQUIPO;

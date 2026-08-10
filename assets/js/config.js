@@ -86,6 +86,24 @@ const CAMPOS = [
   { key: 'alp',         label: 'ALP',                    corto: 'ALP',           tipo: 'moneda' },
 ];
 
+/* =========================================================================
+   METAS SEMANALES
+   Cada clave apunta a un campo del reporte diario (ver CAMPOS): asi el
+   cumplimiento se calcula sumando lo ya registrado, sin captura extra.
+   La semana se identifica por su lunes, en formato YYYY-MM-DD.
+   ========================================================================= */
+const METAS_CAMPOS = [
+  { key: 'alp',       label: 'ALP',             corto: 'ALP',   tipo: 'moneda' },
+  { key: 'app',       label: 'Citas agendadas', corto: 'CITAS', tipo: 'entero' },
+  { key: 'referidos', label: 'Referidos',       corto: 'REF',   tipo: 'entero' },
+];
+
+/* Umbrales del semaforo, sobre el % de cumplimiento promedio */
+const SEMAFORO = {
+  verde:    90,   // >= 90%
+  amarillo: 60,   // 60% a 89%  (por debajo: rojo)
+};
+
 /* Métricas destacadas en la fila de indicadores (KPI) de Estadísticas */
 const KPIS = ['app', 'press', 'pressSale', 'pressNoSale', 'callerCalls', 'alp'];
 
