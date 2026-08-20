@@ -9,11 +9,18 @@ fechas.
 | Pestaña | Para qué |
 |---|---|
 | **Registro** | Captura del reporte diario. Corregir o borrar el propio. |
-| **Resumen** | "¿Cómo vamos?" — semáforo, indicadores, comparativa semanal, gráficas. |
-| **Reportes** | "Dame los números de tal fecha" — tablas, imprimir, CSV. |
-| **Metas** | Meta semanal por agente. Los totales por línea se suman solos. |
+| **Resumen** | "¿Cómo vamos?" — sin reportar hoy, semáforo, indicadores, comparativa, gráficas. |
+| **Reportes** | "Dame los números de tal fecha" — tablas ordenables, imprimir, CSV. |
+| **Metas** | Meta base por agente y excepciones semanales. Los totales por línea se suman solos. |
 | **Contests** | Concursos con premio y avance calculado desde los reportes. |
 | **Agentes** | Catálogo, roles, "reporta a" y organigrama. Requiere PIN. |
+
+Además, sin ser pestañas:
+
+- **Ficha del agente** — se abre pulsando cualquier nombre. Tiene URL propia
+  (`#agente=<id>`) para poder compartirla antes de un uno a uno.
+- **Modo junta** — botón en Resumen. Pantalla completa para proyectar, sin
+  controles. Se sale con `Esc`.
 
 - **Frontend:** HTML, CSS y JavaScript sin dependencias externas. Se sube tal cual
   a cualquier hosting (incluido `astral-gt.com`).
@@ -215,12 +222,45 @@ texto dice cuántos están por debajo, para que el problema no se esconda.
 
 No hay regla de inactividad: quien no reporta acumula poco y su % cae solo.
 
+### Constancia y "sin reportar"
+
+`DIAS_HABILES` dice qué días cuentan como jornada. **Por defecto son los siete**,
+porque eso es lo que dicen los datos: hay registros en sábados y domingos. Con
+lunes a viernes, quien trabaja el fin de semana daría más del 100%.
+
+La tarjeta "Sin reportar" evalúa el **último día ya cerrado**, según
+`HORA_CORTE_REPORTE` (22:00). Antes de esa hora el día de hoy sigue abierto y
+decir que nadie ha reportado no informa nada: a las nueve de la mañana faltan
+todos. Así que por la mañana muestra quién falló ayer.
+
 ### Contests
 
 El avance **no se captura**: se calcula leyendo los reportes diarios dentro del
 rango y el alcance del contest. Con varios requisitos se elige si hay que
 cumplirlos todos o basta con uno; con "todos", el avance mostrado es el del
 requisito peor parado, porque hasta que ese no se cumpla no hay premio.
+
+Hay tres ámbitos de requisito: **por agente**, **suma del equipo** y **cuántos
+certifican** (cuántas personas alcanzan un umbral cada una). Los dos últimos son
+puertas: si no se cumplen, nadie califica.
+
+**Calificar no es ganar.** Calificar mete al sorteo; el ganador se marca a mano
+al resolver, y se guarda en la columna `ganadores`. Un contest terminado no se
+archiva solo: queda "por resolver" hasta que un administrador diga si se pagó, no
+se cumplió o se canceló.
+
+### Pólizas: el campo opcional
+
+`polizas` es el único campo opcional del registro. Vacío significa **"no se
+anotó"**, que no es lo mismo que cero: los registros anteriores a la columna no
+lo traen, y guardarlos como cero haría que el ALP por póliza saliera infinito.
+
+Las métricas derivadas (ALP por póliza, pólizas por presentación) se calculan
+**solo sobre los registros que traen el dato**, numerador y denominador, y dicen
+sobre cuántos se calcularon. Donde no hay dato muestran `—`, nunca 0.
+
+Si la hoja todavía no tiene la columna, la página lo detecta y avisa que lo
+escrito ahí no se guardará.
 
 ---
 

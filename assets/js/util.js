@@ -129,10 +129,91 @@ function rangoDePreset(key) {
   }
 }
 
+/** Día de la semana de una fecha ISO: 0 = domingo … 6 = sábado. */
+function diaDeLaSemana(iso) {
+  const [a, m, d] = iso.split('-').map(Number);
+  return new Date(a, m - 1, d).getDay();
+}
+
+/** ¿Es jornada esperada según DIAS_HABILES? */
+function esDiaHabil(iso) {
+  return DIAS_HABILES.includes(diaDeLaSemana(iso));
+}
+
+/**
+ * Cuántos días hábiles hay en un rango, inclusive. Es el denominador de
+ * la constancia: días con reporte ÷ días hábiles del período.
+ */
+function diasHabilesDelRango(desde, hasta) {
+  if (!desde || !hasta || desde > hasta) return 0;
+  return rangoFechas(desde, hasta).filter(esDiaHabil).length;
+}
+
+/**
+ * Último día hábil ya cerrado, según HORA_CORTE_REPORTE. Pasada esa hora
+ * el día de hoy cuenta; antes, el hábil anterior.
+ */
+function ultimoDiaCerrado(ahora = new Date()) {
+  const hoy = hoyISO();
+  if (ahora.getHours() >= HORA_CORTE_REPORTE && esDiaHabil(hoy)) return hoy;
+
+  let d = sumarDias(hoy, -1);
+  let guarda = 0;
+  while (!esDiaHabil(d) && guarda++ < 14) d = sumarDias(d, -1);
+  return d;
+}
+
+/** ¿Ya pasó la hora de corte de hoy? */
+function pasoElCorte(ahora = new Date()) {
+  return ahora.getHours() >= HORA_CORTE_REPORTE;
+}
+
+/** "22:00" */
+function horaCorteTexto() {
+  return `${pad2(HORA_CORTE_REPORTE)}:00`;
+}
+
 /** Días que abarca un rango, inclusive. */
 function diasDelRango(desde, hasta) {
   if (!desde || !hasta) return 0;
   return Math.max(0, diasDesde(desde) - diasDesde(hasta)) + 1;
+}
+
+/** Resta meses a una fecha ISO conservando el día, o el último del mes. */
+function restarMeses(iso, meses) {
+  const [a, m, d] = iso.split('-').map(Number);
+  const destino = new Date(a, m - 1 - meses, 1);
+  const ultimo = new Date(destino.getFullYear(), destino.getMonth() + 1, 0).getDate();
+  return `${destino.getFullYear()}-${pad2(destino.getMonth() + 1)}-${pad2(Math.min(d, ultimo))}`;
+}
+
+/**
+ * Periodo comparable inmediatamente anterior.
+ *
+ * No se resta la duración a secas: para una semana en curso de lunes a
+ * jueves, lo justo es lunes a jueves de la semana pasada, no jueves a
+ * domingo. Por eso las semanas se desplazan siete días y los meses un mes.
+ */
+function periodoAnterior(preset, rango) {
+  switch (preset) {
+    case 'hoy':
+    case 'ayer':
+      return { desde: sumarDias(rango.desde, -1), hasta: sumarDias(rango.hasta, -1) };
+
+    case 'semana':
+    case 'semanaPasada':
+      return { desde: sumarDias(rango.desde, -7), hasta: sumarDias(rango.hasta, -7) };
+
+    case 'mes':
+    case 'mesPasado':
+      return { desde: restarMeses(rango.desde, 1), hasta: restarMeses(rango.hasta, 1) };
+
+    default: {
+      // Cualquier otro rango: la misma cantidad de días, justo antes
+      const largo = diasDelRango(rango.desde, rango.hasta);
+      return { desde: sumarDias(rango.desde, -largo), hasta: sumarDias(rango.desde, -1) };
+    }
+  }
 }
 
 /** Días transcurridos entre una fecha ISO y hoy. Negativo si es futura. */
@@ -217,6 +298,23 @@ function el(tag, attrs = {}, hijos = []) {
     n.appendChild(typeof h === 'string' ? document.createTextNode(h) : h);
   }
   return n;
+}
+
+/* ---------- Campos opcionales ------------------------------------------- */
+
+/**
+ * ¿El registro trae anotado este campo? Distingue "no se anotó" de "cero",
+ * que en un campo opcional no significan lo mismo: cero pólizas es un dato,
+ * la ausencia no lo es.
+ */
+function tieneDato(registro, key) {
+  const v = registro[key];
+  return v !== undefined && v !== null && v !== '';
+}
+
+/** Muestra el valor de un campo opcional, o una raya si no se anotó. */
+function fmtOpcional(registro, campo) {
+  return tieneDato(registro, campo.key) ? fmt(registro[campo.key], campo.tipo) : '—';
 }
 
 /** Escapa texto para insertar de forma segura en HTML. */

@@ -91,7 +91,7 @@ const Charts = (() => {
      Color secuencial (un solo tono): más alto = paso más contrastado.
      ======================================================================= */
 
-  function barrasH(cont, { items, formato = 'entero', sufijo = '' }) {
+  function barrasH(cont, { items, formato = 'entero', sufijo = '', alPulsar = null }) {
     cont.innerHTML = '';
     if (!items.length) {
       cont.appendChild(el('p', { class: 'vacio', text: 'Sin datos en el rango seleccionado.' }));
@@ -147,8 +147,13 @@ const Charts = (() => {
       // Zona de contacto más grande que la barra
       const golpe = svgEl('rect', {
         x: 0, y, width: ancho, height: filaAlto,
-        fill: 'transparent', class: 'g-golpe',
+        fill: 'transparent',
+        class: 'g-golpe' + (alPulsar && it.id ? ' g-golpe--enlace' : ''),
       });
+      if (alPulsar && it.id) {
+        golpe.addEventListener('click', () => alPulsar(it.id));
+        et.setAttribute('class', 'g-etiqueta g-etiqueta--enlace');
+      }
       golpe.addEventListener('mousemove', e => {
         barra.setAttribute('opacity', '0.82');
         mostrarTip(
@@ -323,10 +328,90 @@ const Charts = (() => {
     }
   }
 
+  /* =======================================================================
+     MINI LÍNEA — evolución de un solo indicador
+
+     Van varias en paralelo, una por ratio, en vez de superponerlas: un
+     porcentaje y un ratio de 0.9 no comparten escala, y forzarlos a un
+     mismo eje haría parecer plano lo que se mueve.
+     ======================================================================= */
+
+  function miniLinea(cont, { etiquetas, valores, formato = 'entero', sufijo = '' }) {
+    cont.innerHTML = '';
+
+    const utiles = valores.filter(v => v !== null && v !== undefined);
+    if (utiles.length < 2) {
+      cont.appendChild(el('p', { class: 'vacio', text: 'Sin suficientes períodos para ver evolución.' }));
+      return;
+    }
+
+    const P = paleta();
+    const ancho = 300, alto = 84;
+    const margen = { arriba: 8, derecha: 6, abajo: 16, izquierda: 6 };
+    const w = ancho - margen.izquierda - margen.derecha;
+    const h = alto - margen.arriba - margen.abajo;
+
+    const max = Math.max(...utiles);
+    const min = Math.min(...utiles);
+    const rango = max - min || 1;
+
+    const px = i => margen.izquierda + (valores.length === 1 ? w / 2 : (i / (valores.length - 1)) * w);
+    const py = v => margen.arriba + h - ((v - min) / rango) * h;
+
+    const svg = svgEl('svg', {
+      viewBox: `0 0 ${ancho} ${alto}`, class: 'grafica mini',
+      role: 'img', preserveAspectRatio: 'none',
+    });
+
+    // Línea base tenue: da referencia sin competir con el trazo
+    svg.appendChild(svgEl('line', {
+      x1: margen.izquierda, y1: margen.arriba + h,
+      x2: margen.izquierda + w, y2: margen.arriba + h,
+      stroke: P.malla, 'stroke-width': 1,
+    }));
+
+    const puntos = valores.map((v, i) => v === null || v === undefined ? null : [px(i), py(v)]);
+    const d = puntos.filter(Boolean)
+      .map((p, i) => `${i ? 'L' : 'M'}${p[0].toFixed(1)},${p[1].toFixed(1)}`).join(' ');
+
+    svg.appendChild(svgEl('path', {
+      d, fill: 'none', stroke: P.serie[0],
+      'stroke-width': 2, 'stroke-linejoin': 'round', 'stroke-linecap': 'round',
+    }));
+
+    // Solo se marca el último punto: es el estado actual
+    const ultimo = puntos.filter(Boolean).pop();
+    if (ultimo) {
+      svg.appendChild(svgEl('circle', {
+        cx: ultimo[0], cy: ultimo[1], r: 3.5,
+        fill: P.serie[0], stroke: P.superficie, 'stroke-width': 1.5,
+      }));
+    }
+
+    // Capa de lectura: al pasar el cursor dice el período y su valor
+    const capa = svgEl('rect', {
+      x: 0, y: 0, width: ancho, height: alto, fill: 'transparent',
+    });
+    capa.addEventListener('mousemove', e => {
+      const caja = svg.getBoundingClientRect();
+      const rel = ((e.clientX - caja.left) / caja.width) * ancho;
+      const i = Math.max(0, Math.min(valores.length - 1,
+        Math.round(((rel - margen.izquierda) / w) * (valores.length - 1))));
+      const v = valores[i];
+      mostrarTip(`<strong>${esc(etiquetas[i])}</strong>` +
+        `<span class="tip-val">${v === null || v === undefined ? 'sin datos'
+          : fmt(v, formato) + sufijo}</span>`, e);
+    });
+    capa.addEventListener('mouseleave', ocultarTip);
+    svg.appendChild(capa);
+
+    cont.appendChild(svg);
+  }
+
   /* Redibuja al cambiar de tema */
   const suscriptores = [];
   function alCambiarTema(fn) { suscriptores.push(fn); }
   function notificarTema()   { suscriptores.forEach(fn => fn()); }
 
-  return { barrasH, lineas, alCambiarTema, notificarTema, paleta };
+  return { barrasH, lineas, miniLinea, alCambiarTema, notificarTema, paleta };
 })();

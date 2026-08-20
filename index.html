@@ -31,7 +31,9 @@
     <button class="pestana"           role="tab" data-panel="panel-resumen"      aria-selected="false">Resumen</button>
     <button class="pestana"           role="tab" data-panel="panel-reportes"     aria-selected="false">Reportes</button>
     <button class="pestana"           role="tab" data-panel="panel-metas"        aria-selected="false">Metas</button>
-    <button class="pestana"           role="tab" data-panel="panel-contests"     aria-selected="false">Contests</button>
+    <button class="pestana"           role="tab" data-panel="panel-contests"     aria-selected="false">
+      Contests<span class="pestana-badge" id="badgeContests" hidden></span>
+    </button>
     <button class="pestana"           role="tab" data-panel="panel-agentes"      aria-selected="false">Agentes</button>
   </nav>
 </header>
@@ -117,9 +119,26 @@
         <label for="rs_linea">Ver</label>
         <select id="rs_linea"></select>
       </div>
+      <div class="filtros-acc">
+        <button class="btn btn-suave" id="btnModoJunta" type="button">
+          📽 Modo junta
+        </button>
+      </div>
     </div>
 
-    <!-- Salud del equipo: lo primero que se ve al abrir -->
+    <!-- Quién no reportó: plegado, para no comerse la pantalla -->
+    <div class="tarjeta tarjeta--compacta" id="tarjetaSinReportar">
+      <button class="plegable" id="sinReportarToggle" type="button"
+              aria-expanded="false" aria-controls="sinReportar">
+        <span class="plegable-flecha" aria-hidden="true">▸</span>
+        <span class="plegable-titulo" id="sinReportarTitulo">Sin reportar</span>
+        <span class="plegable-marca" id="sinReportarMarca"></span>
+      </button>
+      <p class="ayuda plegable-pie" id="sinReportarAyuda"></p>
+      <div id="sinReportar" hidden></div>
+    </div>
+
+    <!-- Salud del equipo -->
     <div class="tarjeta">
       <div class="tarjeta-cab">
         <h2>Salud del equipo</h2>
@@ -224,8 +243,18 @@
   <!-- ================= PANEL: METAS ================= -->
   <section class="panel" id="panel-metas" role="tabpanel">
 
+    <!-- La meta base aplica a todas las semanas; la semanal es la excepción -->
+    <div class="segmentado" role="tablist" aria-label="Qué metas editar">
+      <button class="metas-modo is-activa" type="button" role="tab" data-modo="semana">
+        Metas de la semana
+      </button>
+      <button class="metas-modo" type="button" role="tab" data-modo="base">
+        Metas base
+      </button>
+    </div>
+
     <div class="filtros" id="filtrosMetas">
-      <div class="campo campo--ancho">
+      <div class="campo campo--ancho" id="zonaSemana">
         <span class="etq-campo" id="etqSemanaTitulo">Semana</span>
         <div class="paso-semana" role="group" aria-labelledby="etqSemanaTitulo">
           <button type="button" class="btn-mini" id="btnSemanaAnt" aria-label="Semana anterior">‹</button>
@@ -304,6 +333,77 @@
     </p>
 
     <div class="contests" id="contests"></div>
+  </section>
+
+  <!-- ================= PANEL: FICHA DEL AGENTE ================= -->
+  <!-- No es una pestaña: se abre desde cualquier nombre y devuelve       -->
+  <!-- a donde estabas. Tiene URL propia para poder compartirla.          -->
+  <section class="panel" id="panel-ficha" role="tabpanel">
+
+    <button class="btn btn-suave volver" id="btnVolverFicha" type="button">← Volver</button>
+
+    <div class="tarjeta ficha-cab">
+      <img class="ficha-logo" src="assets/img/logo-256.png" alt="" width="221" height="256">
+      <div class="ficha-titulo">
+        <h2 id="fichaNombre">—</h2>
+        <p class="ayuda" id="fichaSub"></p>
+      </div>
+      <div class="campo campo--sm">
+        <label for="fi_preset">Periodo</label>
+        <select id="fi_preset"></select>
+      </div>
+    </div>
+
+    <div class="kpis" id="fichaKpis"></div>
+
+    <div class="rejilla-graficas">
+      <div class="tarjeta">
+        <div class="tarjeta-cab">
+          <h2>Cómo va evolucionando</h2>
+          <p class="ayuda">
+            Cada indicador por semana, con su propia escala. Lo que importa
+            no es el acumulado sino si la línea sube o baja.
+          </p>
+        </div>
+        <div class="mini-rejilla" id="fichaEvolucion"></div>
+      </div>
+
+      <div class="tarjeta">
+        <div class="tarjeta-cab">
+          <h2>Sus ratios en el período</h2>
+          <p class="ayuda" id="fichaRatiosSub"></p>
+        </div>
+        <div id="fichaRatios"></div>
+      </div>
+    </div>
+
+    <div class="rejilla-graficas">
+      <div class="tarjeta">
+        <div class="tarjeta-cab">
+          <h2>Meta de la semana</h2>
+          <p class="ayuda" id="fichaMetaSub"></p>
+        </div>
+        <div id="fichaMeta"></div>
+      </div>
+
+      <div class="tarjeta">
+        <div class="tarjeta-cab">
+          <h2>Contests ganados</h2>
+          <p class="ayuda">Premios que esta persona se llevó.</p>
+        </div>
+        <div id="fichaContests"></div>
+      </div>
+    </div>
+
+    <div class="tarjeta">
+      <div class="tarjeta-cab">
+        <h2>Sus registros diarios</h2>
+        <p class="ayuda" id="fichaRegistrosSub"></p>
+      </div>
+      <div class="tabla-scroll">
+        <table class="tabla" id="fichaTabla"></table>
+      </div>
+    </div>
   </section>
 
   <!-- ================= PANEL: AGENTES (ADMIN) ================= -->
@@ -479,11 +579,6 @@
       <div class="lista-check" id="ct_alcanceIds"></div>
     </div>
 
-    <div class="campo">
-      <label for="ct_estatus">Estado</label>
-      <select id="ct_estatus"></select>
-    </div>
-
     <div class="acciones acciones--fin">
       <button type="button" class="btn btn-suave" data-cerrar>Cancelar</button>
       <button type="submit" class="btn btn-primario">Guardar contest</button>
@@ -505,6 +600,33 @@
     </div>
   </form>
 </dialog>
+
+<!-- ================= MODO JUNTA ================= -->
+<!-- Pantalla completa para proyectar: sin filtros, sin exportar, sin    -->
+<!-- barra de navegación. Se sale con Esc.                              -->
+<div class="junta" id="modoJunta" hidden>
+  <header class="junta-cab">
+    <img class="junta-logo" src="assets/img/logo-256.png" alt="" width="221" height="256">
+    <div>
+      <h1 id="juntaTitulo">Gladiator's Team</h1>
+      <p id="juntaSub"></p>
+    </div>
+    <select class="junta-periodo" id="juntaPeriodo" aria-label="Periodo a proyectar"></select>
+    <button class="junta-salir" id="btnSalirJunta" type="button" aria-label="Salir del modo junta">
+      Esc ✕
+    </button>
+  </header>
+
+  <div class="junta-cuerpo" id="juntaCuerpo"></div>
+
+  <nav class="junta-pies" aria-label="Secciones">
+    <button class="junta-punto is-activa" type="button" data-ir="0">Efectividad</button>
+    <button class="junta-punto" type="button" data-ir="1">Leaderboard</button>
+    <button class="junta-punto" type="button" data-ir="2">Atención</button>
+    <button class="junta-punto" type="button" data-ir="3">Comparativa</button>
+    <button class="junta-punto" type="button" data-ir="4">Contests</button>
+  </nav>
+</div>
 
 <footer class="pie">
   <span id="pieModo"></span>

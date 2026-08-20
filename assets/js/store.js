@@ -128,7 +128,7 @@ const Store = (() => {
      nuevos, jerarquia distinta). Sin esto, un navegador que ya tenia la
      semilla vieja nunca recibia la nueva y quedaba con datos incoherentes
      respecto del codigo. Solo afecta al modo demo. */
-  const SEMILLA_VERSION = '6-requisito-por-certificaciones';
+  const SEMILLA_VERSION = '10-polizas-opcionales';
 
   function leerLS(clave, porDefecto) {
     try {
@@ -146,7 +146,17 @@ const Store = (() => {
   /* --- Semilla de prueba: 8 agentes y ~45 días de registros -------------- */
 
   function sembrarDemo() {
-    if (localStorage.getItem(LS_SEMILLA) === SEMILLA_VERSION) return;
+    const mismaVersion = localStorage.getItem(LS_SEMILLA) === SEMILLA_VERSION;
+
+    // Los datos de prueba se generan relativos al dia en que se sembraron.
+    // Si pasan dias, "hoy" queda sin registros y la pagina de prueba deja
+    // de parecerse a la realidad: todo el mundo sale sin reportar. Se
+    // regeneran cuando envejecen mas de un dia.
+    const ultima = leerLS(LS_REGISTROS, [])
+      .reduce((m, r) => (r.fecha > m ? r.fecha : m), '');
+    const frescos = ultima >= sumarDias(hoyISO(), -1);
+
+    if (mismaVersion && frescos) return;
 
     /* Arbol de prueba, con la misma forma del organigrama real:
          Domenico (MGA)
@@ -212,6 +222,11 @@ const Store = (() => {
         const app       = esLider ? entre(1, 4) : entre(2, 9);
         const press     = Math.max(0, app - entre(0, 3));
         const pressSale = Math.max(0, press - entre(0, press));
+
+        // Las polizas son un campo nuevo: los registros de mas de tres
+        // semanas atras no lo traen, igual que en produccion. Sirve para
+        // ver que las metricas derivadas no mienten cuando falta el dato.
+        const anotaPolizas = d <= 20;
         registros.push({
           id: nuevoId(),
           fecha,
@@ -220,6 +235,7 @@ const Store = (() => {
           app,
           press,
           pressSale,
+          polizas: anotaPolizas ? pressSale + entre(0, 2) : '',
           callerCalls: entre(20, 85),
           noShow:      entre(0, 3),
           noCalifica:  entre(0, 2),
@@ -233,28 +249,44 @@ const Store = (() => {
 
     /* Metas de las ultimas 6 semanas. Se dejan dos agentes sin meta a
        proposito, para poder probar el caso "sin meta". */
+    /* Metas base: se capturan una vez y valen para todas las semanas. Es
+       lo normal. Solo se siembran un par de excepciones semanales, que es
+       como deberia usarse. Dos agentes quedan sin base para poder ver el
+       caso "sin meta". */
     const metas = [];
     const sinMeta = new Set(['a17', 'a19', 'a1']);   // a1 es el MGA: sin meta propia
-    // Los lideres tambien producen y llevan meta propia, mas baja porque
-    // dedican parte del tiempo a su equipo.
     const conMeta = agentes.filter(a => !sinMeta.has(a.id));
 
-    for (let s = 5; s >= 0; s--) {
-      const semana = sumarDias(semanaActual(), -7 * s);
-      for (const ag of conMeta) {
-        const esLider = ag.rol !== 'Agente';
-        metas.push({
-          id: nuevoId(),
-          semana,
-          agenteId: ag.id,
-          agenteNombre: ag.nombre,
-          alp:       (esLider ? entre(3, 7) : entre(6, 14)) * 1000,
-          app:       esLider ? entre(8, 15) : entre(18, 30),
-          referidos: esLider ? entre(4, 9)  : entre(8, 18),
-          actualizado: semana,
-        });
-      }
+    for (const ag of conMeta) {
+      const esLider = ag.rol !== 'Agente';
+      metas.push({
+        id: nuevoId(),
+        semana: META_BASE,
+        agenteId: ag.id,
+        agenteNombre: ag.nombre,
+        alp:       (esLider ? entre(3, 7) : entre(6, 14)) * 1000,
+        app:       esLider ? entre(8, 15) : entre(18, 30),
+        referidos: esLider ? entre(4, 9)  : entre(8, 18),
+        actualizado: hoyISO(),
+      });
     }
+
+    // Dos excepciones en la semana en curso: una meta reforzada y otra
+    // rebajada, para ver la distincion entre heredada y fijada a mano.
+    [['a9', 1.6], ['a12', 0.5]].forEach(([id, factor]) => {
+      const base = metas.find(m => m.agenteId === id);
+      if (!base) return;
+      metas.push({
+        id: nuevoId(),
+        semana: semanaActual(),
+        agenteId: id,
+        agenteNombre: base.agenteNombre,
+        alp:       Math.round(base.alp * factor),
+        app:       Math.round(base.app * factor),
+        referidos: Math.round(base.referidos * factor),
+        actualizado: hoyISO(),
+      });
+    });
 
     /* Contests de ejemplo: dos vigentes, uno terminado y uno cancelado. */
     const contests = [
@@ -354,7 +386,27 @@ const Store = (() => {
         alcanceTipo: 'todos',
         alcanceLinea: '',
         alcanceIds: [],
+        // Termino por fecha y nadie lo ha resuelto: es el caso que muestra
+        // los tres botones de resolucion.
         estatus: 'auto',
+        ganadores: [],
+      },
+      {
+        // Ya resuelto: calificaron varios, pero el premio se sorteo y lo
+        // gano una sola persona. Sirve para ver el historial.
+        id: 'c8',
+        nombre: 'Bono de Medio Ano',
+        desde: sumarDias(hoyISO(), -70),
+        hasta: sumarDias(hoyISO(), -40),
+        premioTipo: 'efectivo',
+        premio: '$750 en efectivo',
+        requisitos: [{ campo: 'pressSale', meta: 10, ambito: 'individual' }],
+        combinacion: 'todos',
+        alcanceTipo: 'todos',
+        alcanceLinea: '',
+        alcanceIds: [],
+        estatus: 'pagado',
+        ganadores: ['a12'],
       },
       {
         id: 'c4',

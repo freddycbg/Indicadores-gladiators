@@ -81,6 +81,11 @@ const CAMPOS = [
   { key: 'app',         label: 'Appointment (APP)',      corto: 'APP',           tipo: 'entero' },
   { key: 'press',       label: 'Presentaciones (PRESS)', corto: 'PRESS',         tipo: 'entero' },
   { key: 'pressSale',   label: 'PRESS SALE',             corto: 'PRESS SALE',    tipo: 'entero' },
+  // Opcional: los registros historicos no lo traen. Vacio significa "no se
+  // anoto", que NO es lo mismo que cero polizas — por eso no se convierte
+  // a 0 como los demas campos.
+  { key: 'polizas',     label: 'Pólizas vendidas',       corto: 'PÓLIZAS',       tipo: 'entero',
+    opcional: true },
   { key: 'pressNoSale', label: 'PRESS NO SALE',          corto: 'PRESS NO SALE', tipo: 'entero', mejor: 'bajo' },
   { key: 'callerCalls', label: 'Llamadas del Caller',    corto: 'CALLER',        tipo: 'entero' },
   { key: 'noShow',      label: 'NO SHOW',                corto: 'NO SHOW',       tipo: 'entero', mejor: 'bajo' },
@@ -102,6 +107,17 @@ const METAS_CAMPOS = [
   { key: 'referidos', label: 'Referidos',       corto: 'REF',   tipo: 'entero' },
 ];
 
+/**
+ * Meta base: la que aplica a todas las semanas mientras no haya una
+ * excepcion. Se guarda como una fila mas de la hoja Metas con este valor
+ * en la columna "semana", asi que NO hace falta ninguna columna nueva ni
+ * volver a implementar el Apps Script.
+ *
+ * El centinela no es una fecha, de modo que los filtros por rango
+ * (semana >= desde && semana <= hasta) nunca lo devuelven por error.
+ */
+const META_BASE = 'BASE';
+
 /* =========================================================================
    RANGOS DE FECHA PREDEFINIDOS
    Cubren desde un dia suelto hasta el ano completo. 'custom' deja las dos
@@ -112,15 +128,38 @@ const PRESETS_RANGO = [
   { key: 'ayer',         label: 'Ayer' },
   { key: 'semana',       label: 'Esta semana' },
   { key: 'semanaPasada', label: 'Semana pasada' },
-  { key: '7',            label: 'Últimos 7 días' },
-  { key: '15',           label: 'Últimos 15 días (quincena)' },
-  { key: '30',           label: 'Últimos 30 días' },
   { key: 'mes',          label: 'Mes en curso' },
-  { key: 'mesPasado',    label: 'Mes pasado' },
+  { key: 'mesPasado',    label: 'Mes anterior' },
   { key: '90',           label: 'Últimos 3 meses' },
   { key: 'anio',         label: 'Este año' },
   { key: 'custom',       label: 'Personalizado' },
 ];
+
+/* Periodo con el que abren Resumen y Reportes. La semana en curso es lo
+   que se revisa a diario; los rangos largos se eligen a mano. */
+const PRESET_POR_DEFECTO = 'semana';
+
+/* La ficha abre con mas historial: su grafica de evolucion necesita
+   varias semanas para que la linea diga algo. */
+const PRESET_FICHA = '90';
+
+/* En el modo junta solo interesan periodos cortos y comparables. */
+const PRESETS_JUNTA = ['hoy', 'semana', 'semanaPasada', 'mes'];
+
+/**
+ * Indicadores con los que se detecta a quien necesita atencion.
+ *
+ * No se suman entre si: las llamadas son cientos y los referidos decenas,
+ * asi que sumarlos haria que solo pesara el CALLER. Cada uno se compara
+ * contra el promedio del equipo y se promedian esos porcentajes.
+ */
+const KPIS_ATENCION = ['app', 'referidos', 'press', 'callerCalls'];
+
+/* Umbrales del indice de atencion, en % del promedio del equipo */
+const ATENCION = {
+  critico: 60,   // por debajo: rojo
+  bajo:    85,   // por debajo: amarillo
+};
 
 /* =========================================================================
    COMPARATIVA SEMANAL
@@ -138,6 +177,45 @@ const COMPARATIVA_CAMPOS = [
   { key: 'tasaCierre', label: 'Tasa de cierre', corto: '% CIERRE',
     tipo: 'porcentaje', mejor: 'alto', calculado: true },
 ];
+
+/* =========================================================================
+   CONSTANCIA — cada cuanto se espera un reporte
+
+   DIAS_HABILES lista los dias de la semana que cuentan como jornada, con
+   0 = domingo y 6 = sabado. El valor por defecto son los siete porque eso
+   es lo que dicen los datos: en el rango revisado hay registros en todas
+   las fechas, sabados y domingos incluidos. Poner de lunes a viernes daria
+   constancias por encima del 100% a quien trabaja el fin de semana.
+
+   Para excluir el domingo, por ejemplo, dejar [1, 2, 3, 4, 5, 6].
+   ========================================================================= */
+const DIAS_HABILES = [0, 1, 2, 3, 4, 5, 6];
+
+/**
+ * Hora a partir de la cual se da por cerrado el dia (0 a 23).
+ *
+ * Antes de esa hora el dia de hoy sigue abierto y no significa nada decir
+ * que nadie ha reportado: a las nueve de la manana faltan todos. Por eso
+ * "Sin reportar" evalua el ultimo dia YA CERRADO, que por la manana es el
+ * dia anterior y despues del corte es hoy mismo.
+ */
+const HORA_CORTE_REPORTE = 22;
+
+/* =========================================================================
+   REFERIDOS POR PRESENTACION
+   Cuantos referidos deja cada presentacion. Es el combustible del negocio:
+   sin referidos nuevos, las citas se acaban.
+   ========================================================================= */
+const RATIO_REF_PRESS = {
+  verde:    3.0,
+  amarillo: 2.0,
+};
+
+/* Umbrales del semaforo de constancia, en % de dias habiles reportados */
+const CONSTANCIA = {
+  verde:    90,
+  amarillo: 60,
+};
 
 /* Umbrales del semaforo, sobre el % de cumplimiento promedio */
 const SEMAFORO = {
