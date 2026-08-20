@@ -1415,19 +1415,33 @@ function iniciarContests() {
   $('#formContest').addEventListener('submit', guardarContestDesdeForm);
 }
 
-/** activo | proximo | finalizado | cancelado */
+/**
+ * activo | proximo | porResolver | pagado | anulado | cancelado
+ *
+ * Pasada la fecha de fin el contest queda "por resolver" y sigue a la
+ * vista: solo sale del listado cuando un administrador marca si se pagó o
+ * se anuló. Así no se archiva solo un premio que quedó a deber.
+ */
 function estadoDeContest(c) {
-  if (c.estatus === 'cancelado')  return 'cancelado';
-  if (c.estatus === 'finalizado') return 'finalizado';
+  if (c.estatus === 'cancelado') return 'cancelado';
+  if (c.estatus === 'pagado')    return 'pagado';
+  if (c.estatus === 'anulado')   return 'anulado';
+
   const hoy = hoyISO();
   if (hoy < c.desde) return 'proximo';
-  if (hoy > c.hasta) return 'finalizado';
+  // 'finalizado' es el valor antiguo: también pide resolución.
+  if (hoy > c.hasta || c.estatus === 'finalizado') return 'porResolver';
   return 'activo';
 }
 
+/** Estados que siguen pidiendo atención y no se archivan. */
+const ESTADOS_VIGENTES = ['activo', 'proximo', 'porResolver'];
+
 const ETIQUETA_CONTEST = {
-  activo: 'En curso', proximo: 'Por empezar',
-  finalizado: 'Finalizado', cancelado: 'Cancelado',
+  activo: 'En curso',      proximo: 'Por empezar',
+  porResolver: 'Por resolver',
+  pagado: 'Pagado',        anulado: 'Anulado',
+  cancelado: 'Cancelado',
 };
 
 /**
@@ -1530,13 +1544,29 @@ function progresoDe(c, agenteId, registros, equipo = { hay: false, cumplido: tru
     .filter(req => !esColectivo(req))
     .map(req => detalleRequisito(req, sumaEnRango(suyos, req.campo)));
 
-  if (!detalles.length) {
-    // Solo hay requisitos de equipo: el individual califica con la puerta.
+  // Lo que esta persona puso en cada requisito colectivo. Sin esto, un
+  // contest que solo tiene meta de equipo mostraba a todos en 0% aunque
+  // hubieran producido, lo que parece un error de datos.
+  const aportes = (c.requisitos || []).filter(esColectivo).map(req => {
+    const umbral = ambitoDe(req) === 'conteo' ? (Number(req.umbral) || 0) : null;
+    const valor = sumaEnRango(suyos, req.campo);
     return {
-      ratio: equipo.cumplido ? 1 : 0,
+      campo: CAMPOS.find(x => x.key === req.campo),
+      valor, umbral,
+      certifica: umbral !== null ? valor >= umbral : null,
+    };
+  });
+
+  if (!detalles.length) {
+    // Solo hay requisitos colectivos: quien califica lo hace por la puerta,
+    // pero igual se muestra su aporte para que se vea que sí produjo.
+    const conUmbral = aportes.find(a => a.umbral > 0);
+    return {
+      ratio: conUmbral ? Math.min(conUmbral.valor / conUmbral.umbral, 1) : null,
       cumplido: equipo.hay && equipo.cumplido,
-      detalles,
+      detalles, aportes,
       frenadoPorEquipo: false,
+      soloColectivo: true,
     };
   }
 
@@ -1549,10 +1579,11 @@ function progresoDe(c, agenteId, registros, equipo = { hay: false, cumplido: tru
   return {
     ratio,
     cumplido: propio && equipo.cumplido,
-    detalles,
+    detalles, aportes,
     // Hizo su parte pero el equipo no llegó: conviene decirlo, no marcarlo
     // como si hubiera fallado él.
     frenadoPorEquipo: propio && !equipo.cumplido,
+    soloColectivo: false,
   };
 }
 
@@ -1591,10 +1622,16 @@ async function refrescarContests() {
 
   const visibles = todos.filter(c => {
     const e = estadoDeContest(c);
-    if (filtro === 'activos')   return e === 'activo' || e === 'proximo';
-    if (filtro === 'historico') return e === 'finalizado' || e === 'cancelado';
+    if (filtro === 'activos')   return ESTADOS_VIGENTES.includes(e);
+    if (filtro === 'historico') return !ESTADOS_VIGENTES.includes(e);
     return true;
-  }).sort((a, b) => (b.desde < a.desde ? -1 : b.desde > a.desde ? 1 : 0));
+  }).sort((a, b) => {
+    // Lo que espera decisión va primero: es lo único accionable.
+    const pesoA = estadoDeContest(a) === 'porResolver' ? 0 : 1;
+    const pesoB = estadoDeContest(b) === 'porResolver' ? 0 : 1;
+    if (pesoA !== pesoB) return pesoA - pesoB;
+    return b.desde < a.desde ? -1 : b.desde > a.desde ? 1 : 0;
+  });
 
   // Una sola consulta que cubra todos los rangos en pantalla
   let registros = [];
@@ -1626,8 +1663,22 @@ function tarjetaContest(c, registros, esAdmin) {
   const equipo = progresoColectivo(c, registros);
 
   const avances = participantes
-    .map(a => ({ agente: a, ...progresoDe(c, a.id, registros, equipo) }))
-    .sort((x, y) => (y.cumplido - x.cumplido) || (y.ratio - x.ratio));
+    .map(a => ({ agente: a, ...progresoDe(c, a.id, registros, equipo) }));
+
+  // Sin requisito individual y sin umbral no hay contra qué medir a cada
+  // uno: la barra pasa a leerse contra quien más aportó, para que la lista
+  // ordene por contribución en vez de dejar a todos planos.
+  const sinReferencia = avances.length && avances.every(a => a.soloColectivo && a.ratio === null);
+  if (sinReferencia) {
+    const tope = Math.max(1, ...avances.map(a => (a.aportes[0] ? a.aportes[0].valor : 0)));
+    avances.forEach(a => {
+      a.ratio = (a.aportes[0] ? a.aportes[0].valor : 0) / tope;
+      a.relativo = true;
+    });
+  }
+
+  avances.sort((x, y) =>
+    (y.cumplido - x.cumplido) || ((y.ratio || 0) - (x.ratio || 0)));
 
   const cumplieron = avances.filter(a => a.cumplido).length;
   const dias = diasDesde(c.hasta) * -1;   // positivo = faltan dias
@@ -1702,6 +1753,24 @@ function tarjetaContest(c, registros, esAdmin) {
       ? avances.map(a => filaAvance(a, c))
       : [el('p', { class: 'vacio', text: 'Sin participantes en el alcance definido.' })]);
 
+  // Terminó por fecha pero nadie ha dicho si se pagó: es lo único que
+  // pide una decisión, así que va destacado y no en la fila de acciones.
+  const resolucion = estado === 'porResolver' ? el('div', { class: 'resolver' }, [
+    el('span', { class: 'resolver-texto', text: esAdmin
+      ? `Terminó el ${fechaCorta(c.hasta)}. ¿Se pagó el premio?`
+      : `Terminó el ${fechaCorta(c.hasta)}, pendiente de resolución por un administrador.` }),
+    esAdmin ? el('span', { class: 'resolver-acc' }, [
+      el('button', {
+        class: 'btn btn-primario btn--mini', type: 'button', text: 'Sí, se pagó',
+        onclick: () => resolverContest(c, 'pagado'),
+      }),
+      el('button', {
+        class: 'btn btn-suave btn--mini', type: 'button', text: 'No se cumplió',
+        onclick: () => resolverContest(c, 'anulado'),
+      }),
+    ]) : null,
+  ].filter(Boolean)) : null;
+
   const pie = el('div', { class: 'contest-pie' }, [
     el('span', {
       class: 'ayuda',
@@ -1717,6 +1786,11 @@ function tarjetaContest(c, registros, esAdmin) {
         class: 'btn-mini', type: 'button', text: 'Editar',
         onclick: () => abrirDlgContest(c),
       }) : null,
+      // Reabrir lo ya resuelto, por si la decisión fue un error
+      esAdmin && !ESTADOS_VIGENTES.includes(estado) ? el('button', {
+        class: 'btn-mini', type: 'button', text: 'Reabrir',
+        onclick: () => resolverContest(c, 'auto'),
+      }) : null,
       esAdmin ? el('button', {
         class: 'btn-mini btn-mini--peligro', type: 'button', text: 'Eliminar',
         onclick: () => eliminarContest(c),
@@ -1725,38 +1799,68 @@ function tarjetaContest(c, registros, esAdmin) {
   ]);
 
   return el('article', { class: `tarjeta contest contest--${estado}` },
-    [encabezado, meta, bloqueEquipo, listaAvance, pie].filter(Boolean));
+    [encabezado, meta, resolucion, bloqueEquipo, listaAvance, pie].filter(Boolean));
 }
 
-function filaAvance({ agente, ratio, cumplido, detalles, frenadoPorEquipo }, c) {
-  const pct = Math.round(ratio * 100);
+/** Marca el desenlace de un contest terminado, o lo vuelve a abrir. */
+async function resolverContest(c, estatus) {
+  const etiquetas = {
+    pagado:  'marcado como pagado',
+    anulado: 'marcado como anulado',
+    auto:    'reabierto',
+  };
+  try {
+    await Store.guardarContest({ ...c, estatus });
+    await refrescarContests();
+    aviso(`"${c.nombre}" ${etiquetas[estatus]}.`);
+  } catch (err) {
+    aviso(err.message, 'error');
+  }
+}
+
+function filaAvance(av, c) {
+  const { agente, cumplido, detalles, aportes, frenadoPorEquipo, soloColectivo, relativo } = av;
+  const pct = Math.round((av.ratio || 0) * 100);
+
+  const unidad = d => d.campo ? d.campo.tipo : 'entero';
+  const corto  = d => d.campo ? d.campo.corto : '?';
+
+  // Con requisito propio se muestra real/meta. Sin él, lo que aportó al
+  // equipo: es su producción real, no un cero.
+  const detalle = detalles.length
+    ? detalles.map(d => `${corto(d)} ${fmt(d.real, unidad(d))}/${fmt(d.meta, unidad(d))}`).join(' · ')
+    : (aportes || []).map(a => a.umbral > 0
+        ? `${corto(a)} ${fmt(a.valor, unidad(a))} de ${fmt(a.umbral, unidad(a))} para certificar`
+        : `Aportó ${corto(a)} ${fmt(a.valor, unidad(a))}`
+      ).join(' · ') || 'Sin requisito individual';
+
+  // Quien certifica ya hizo lo suyo aunque el grupo no complete el mínimo
+  const certifica = (aportes || []).some(a => a.certifica);
 
   const estado = cumplido ? '✓ Cumplido'
     : frenadoPorEquipo ? 'Falta el equipo'
+    : certifica ? '✓ Certifica'
+    : soloColectivo && relativo ? fmt((aportes[0] || {}).valor || 0,
+        aportes[0] && aportes[0].campo ? aportes[0].campo.tipo : 'entero')
     : `${pct}%`;
 
   return el('div', { class: 'avance' }, [
     el('span', { class: 'avance-nombre', text: agente.nombre }),
     el('span', { class: 'barra', role: 'img',
-      'aria-label': `${pct}% de avance`,
+      'aria-label': relativo ? 'Aporte relativo al mayor' : `${pct}% de avance`,
     }, [
       el('span', {
-        class: 'barra-relleno' + (cumplido ? ' barra-relleno--ok' : ''),
+        class: 'barra-relleno' + (cumplido || certifica ? ' barra-relleno--ok' : ''),
         style: `width:${Math.max(2, pct)}%`,
       }),
     ]),
+    el('span', { class: 'avance-detalle', text: detalle }),
     el('span', {
-      class: 'avance-detalle',
-      text: detalles.length
-        ? detalles.map(d =>
-            `${d.campo ? d.campo.corto : '?'} ${fmt(d.real, d.campo ? d.campo.tipo : 'entero')}/${fmt(d.meta, d.campo ? d.campo.tipo : 'entero')}`
-          ).join(' · ')
-        : 'Sin requisito individual: depende solo de la meta de equipo',
-    }),
-    el('span', {
-      class: 'avance-estado' + (cumplido ? ' avance-estado--ok' : '') +
+      class: 'avance-estado' + (cumplido || certifica ? ' avance-estado--ok' : '') +
              (frenadoPorEquipo ? ' avance-estado--espera' : ''),
-      title: frenadoPorEquipo ? 'Cumplió su parte, pero el equipo no ha llegado a su meta.' : '',
+      title: frenadoPorEquipo
+        ? 'Cumplió su parte, pero el equipo no ha llegado a su meta.'
+        : relativo ? 'Barra proporcional a quien más aportó.' : '',
       text: estado,
     }),
   ]);

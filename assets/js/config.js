@@ -187,11 +187,20 @@ const ALCANCE_TIPOS = [
   { key: 'seleccion', label: 'Personas elegidas a mano' },
 ];
 
-/* 'auto' deduce el estado por fecha; los otros dos se fuerzan a mano. */
+/**
+ * 'auto' deduce el estado por fecha. Al pasar la fecha de fin un contest
+ * NO se archiva solo: queda "por resolver" y sigue a la vista hasta que un
+ * administrador diga si se pago o se anulo. Asi no se pierde de vista un
+ * premio pendiente de entregar.
+ *   pagado    → se cumplio y se entrego
+ *   anulado   → termino sin cumplirse los requisitos
+ *   cancelado → se corto antes de tiempo
+ */
 const CONTEST_ESTATUS = [
-  { key: 'auto',       label: 'Automático por fecha' },
-  { key: 'finalizado', label: 'Finalizado' },
-  { key: 'cancelado',  label: 'Cancelado' },
+  { key: 'auto',      label: 'Automático por fecha' },
+  { key: 'pagado',    label: 'Pagado' },
+  { key: 'anulado',   label: 'Anulado (no se cumplió)' },
+  { key: 'cancelado', label: 'Cancelado antes de tiempo' },
 ];
 
 /* Métricas destacadas en la fila de indicadores (KPI) de Estadísticas */

@@ -867,10 +867,32 @@ input:invalid:not(:placeholder-shown) { border-color: var(--critico); }
   padding: 3px 9px;
   border-radius: 999px;
 }
-.contest-estado--activo     { background: rgba(12,163,12,.12); color: var(--bien); }
-.contest-estado--proximo    { background: var(--acento-lavado); color: var(--acento-alto); }
-.contest-estado--finalizado { background: var(--superficie-2); color: var(--tinta-3); }
-.contest-estado--cancelado  { background: var(--critico-lav); color: var(--critico); }
+.contest-estado--activo      { background: rgba(12,163,12,.12); color: var(--bien); }
+.contest-estado--proximo     { background: var(--acento-lavado); color: var(--acento-alto); }
+.contest-estado--porResolver { background: rgba(217,154,26,.16); color: #a9740c; }
+.contest-estado--pagado      { background: rgba(12,163,12,.12); color: var(--bien); }
+.contest-estado--anulado     { background: var(--superficie-2); color: var(--tinta-3); }
+.contest-estado--cancelado   { background: var(--critico-lav); color: var(--critico); }
+
+/* Terminó pero nadie ha dicho si se pagó: es lo único accionable de la
+   tarjeta, así que se destaca por encima del progreso. */
+.resolver {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 12px;
+  padding: 10px 12px;
+  margin-bottom: 12px;
+  border: 1px solid #d99a1a;
+  border-left-width: 3px;
+  border-radius: var(--r-sm);
+  background: rgba(217, 154, 26, .10);
+}
+.resolver-texto { font-size: .84rem; font-weight: 500; flex: 1; min-width: 160px; }
+.resolver-acc { display: flex; gap: 8px; }
+.btn--mini { padding: 6px 12px; font-size: .82rem; }
+
+.contest--porResolver { border-color: #d99a1a; }
 
 .contest-meta {
   display: flex;
