@@ -1779,8 +1779,14 @@ body.con-junta { overflow: hidden; }
 .junta-punto.is-activa { color: var(--navy-900); background: var(--oro); }
 
 @media (max-width: 700px) {
-  .junta-cab { padding: 14px 16px; gap: 12px; }
-  .junta-seccion { padding: 18px 16px 30px; }
+  /* En pantalla angosta el encabezado se apilaba y ocupaba un tercio de
+     la pantalla. El logo sobra aquí y los controles van en su propia fila. */
+  .junta-cab { padding: 12px 14px; gap: 10px; flex-wrap: wrap; }
+  .junta-logo { display: none; }
+  .junta-cab h1 { font-size: 1.1rem; }
+  .junta-periodo { margin-left: 0; flex: 1; min-width: 0; font-size: .85rem; }
+  .junta-salir { margin-left: auto; padding: 6px 12px; }
+  .junta-seccion { padding: 18px 14px 30px; min-height: 0; }
   .junta-pies { flex-wrap: wrap; }
 }
 

@@ -2871,10 +2871,13 @@ function iniciarModoJunta() {
     if (p) sel.appendChild(el('option', { value: p.key, text: p.label }));
   });
   sel.value = 'semana';
-  sel.addEventListener('change', async () => {
-    await pintarModoJunta($('#rs_linea').value);
+
+  const repintar = async () => {
+    await pintarModoJunta($('#juntaLinea').value);
     irASeccion(App.juntaSeccion || 0);
-  });
+  };
+  sel.addEventListener('change', repintar);
+  $('#juntaLinea').addEventListener('change', repintar);
 
   $('#btnModoJunta').addEventListener('click', abrirModoJunta);
   $('#btnSalirJunta').addEventListener('click', cerrarModoJunta);
@@ -2904,12 +2907,10 @@ function irASeccion(i) {
 }
 
 async function abrirModoJunta() {
-  const lineaId = $('#rs_linea').value;   // se respeta la línea ya elegida
-  const persona = App.agentes.find(a => a.id === lineaId);
-
-  $('#juntaTitulo').textContent = persona
-    ? (persona.rol === 'Agente' ? persona.nombre : `Línea de ${persona.nombre}`)
-    : CONFIG.EQUIPO;
+  // Se entra con la línea ya elegida en Resumen, pero se puede cambiar sin
+  // salir: en una junta de equipo no se quiere ver al resto de la agencia.
+  llenarSelectJerarquia($('#juntaLinea'), { soloLideres: true });
+  $('#juntaLinea').value = $('#rs_linea').value;
 
   $('#modoJunta').hidden = false;
   document.body.classList.add('con-junta');
@@ -2918,7 +2919,7 @@ async function abrirModoJunta() {
   // Pantalla completa de verdad si el navegador deja; si no, la capa basta
   try { await document.documentElement.requestFullscreen(); } catch { /* opcional */ }
 
-  await pintarModoJunta(lineaId);
+  await pintarModoJunta($('#juntaLinea').value);
   irASeccion(0);
 }
 
@@ -2958,8 +2959,16 @@ async function pintarModoJunta(lineaId) {
   const previo = periodoAnterior(preset, rango);
   const alcance = alcanceDe(lineaId);
 
+  const persona = App.agentes.find(a => a.id === lineaId);
+  $('#juntaTitulo').textContent = persona
+    ? (persona.rol === 'Agente' ? persona.nombre : `Línea de ${persona.nombre}`)
+    : CONFIG.EQUIPO;
+
   const etiquetaPeriodo = (PRESETS_RANGO.find(p => p.key === preset) || {}).label || '';
-  $('#juntaSub').textContent = `${etiquetaPeriodo} · ${textoRango(rango.desde, rango.hasta)}`;
+  const cuantos = App.agentes.filter(a =>
+    (!alcance || alcance.has(a.id)) && a.rol === 'Agente' && a.activo !== false).length;
+  $('#juntaSub').textContent =
+    `${etiquetaPeriodo} · ${textoRango(rango.desde, rango.hasta)} · ${cuantos} agente(s)`;
 
   // Una sola consulta cubriendo el periodo y su comparable anterior
   const registros = await Store.listarRegistros({ desde: previo.desde, hasta: rango.hasta });
@@ -3127,11 +3136,19 @@ function seccionAtencionJunta(registros, rango, alcance, etiquetaPeriodo) {
 
 async function seccionContestsJunta(lineaId) {
   const todos = await Store.listarContests();
-  const vigentes = todos.filter(c => ['activo', 'porResolver'].includes(estadoDeContest(c)));
+  const alcance = alcanceDe(lineaId);
+
+  const vigentes = todos
+    .filter(c => ['activo', 'porResolver'].includes(estadoDeContest(c)))
+    // Solo los que tocan a esta gente: en una junta de equipo, un contest
+    // de otra línea es ruido que además desvía la conversación.
+    .filter(c => !alcance || participantesDe(c).some(a => alcance.has(a.id)));
 
   if (!vigentes.length) {
     return seccionJunta('Contests vigentes',
-      el('p', { class: 'junta-vacio', text: 'No hay contests en curso.' }));
+      el('p', { class: 'junta-vacio',
+        text: alcance ? 'No hay contests en curso que incluyan a este equipo.'
+                      : 'No hay contests en curso.' }));
   }
 
   const registros = await Store.listarRegistros({
@@ -3142,10 +3159,16 @@ async function seccionContestsJunta(lineaId) {
   const cont = el('div', { class: 'junta-contests' });
 
   vigentes.slice(0, 4).forEach(c => {
+    // La meta de equipo se mide sobre TODO el contest: es su regla, y
+    // recortarla a la línea daría un número que no existe. Lo que sí se
+    // recorta es la lista de personas que se proyecta.
     const equipo = progresoColectivo(c, registros);
+
     const avances = participantesDe(c)
+      .filter(a => !alcance || alcance.has(a.id))
       .map(a => ({ agente: a, ...progresoDe(c, a.id, registros, equipo) }))
       .sort((x, y) => (y.cumplido - x.cumplido) || ((y.ratio || 0) - (x.ratio || 0)));
+
     const califican = avances.filter(a => a.cumplido).length;
     const dias = diasDesde(c.hasta) * -1;
 
@@ -3171,7 +3194,9 @@ async function seccionContestsJunta(lineaId) {
       ])) : []),
 
       el('p', { class: 'junta-contest-cuenta',
-        text: `${califican} de ${avances.length} califican` }),
+        text: alcance
+          ? `De este equipo: ${califican} de ${avances.length} califican`
+          : `${califican} de ${avances.length} califican` }),
 
       ...avances.slice(0, 3).map(a => el('div', { class: 'junta-barra' }, [
         el('span', { class: 'junta-barra-etq', text: a.agente.nombre }),
