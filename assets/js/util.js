@@ -300,23 +300,6 @@ function el(tag, attrs = {}, hijos = []) {
   return n;
 }
 
-/* ---------- Campos opcionales ------------------------------------------- */
-
-/**
- * ¿El registro trae anotado este campo? Distingue "no se anotó" de "cero",
- * que en un campo opcional no significan lo mismo: cero pólizas es un dato,
- * la ausencia no lo es.
- */
-function tieneDato(registro, key) {
-  const v = registro[key];
-  return v !== undefined && v !== null && v !== '';
-}
-
-/** Muestra el valor de un campo opcional, o una raya si no se anotó. */
-function fmtOpcional(registro, campo) {
-  return tieneDato(registro, campo.key) ? fmt(registro[campo.key], campo.tipo) : '—';
-}
-
 /** Escapa texto para insertar de forma segura en HTML. */
 function esc(s) {
   return String(s ?? '').replace(/[&<>"']/g, c => (

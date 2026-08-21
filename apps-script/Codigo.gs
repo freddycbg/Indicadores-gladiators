@@ -53,26 +53,14 @@ function rangoDeRol(rol) {
 
 var COL_REGISTROS = [
   'id', 'fecha', 'agenteId', 'agenteNombre',
-  'app', 'press', 'pressSale', 'polizas', 'pressNoSale', 'callerCalls',
+  'app', 'press', 'pressSale', 'pressNoSale', 'callerCalls',
   'noShow', 'noCalifica', 'reschedule', 'referidos', 'alp',
   'creado', 'actualizado'
 ];
 
 /* Métricas numéricas. Debe coincidir con CAMPOS en assets/js/config.js. */
-var METRICAS = ['app', 'press', 'pressSale', 'polizas', 'pressNoSale', 'callerCalls',
+var METRICAS = ['app', 'press', 'pressSale', 'pressNoSale', 'callerCalls',
                 'noShow', 'noCalifica', 'reschedule', 'referidos', 'alp'];
-
-/**
- * Métricas OPCIONALES: una celda vacía significa "no se anoto", que no es
- * lo mismo que cero. Se guardan y se devuelven como cadena vacía en vez de
- * convertirse a 0, para que los registros historicos que no las traen no
- * parezcan decir que ese dia se vendieron cero polizas.
- */
-var METRICAS_OPCIONALES = ['polizas'];
-
-function esOpcional(clave) {
-  return METRICAS_OPCIONALES.indexOf(clave) >= 0;
-}
 
 /**
  * Días hacia atrás en que un agente puede corregir su propio reporte sin PIN.
@@ -492,16 +480,7 @@ function normalizarRegistro(r) {
     agenteNombre: String(r.agenteNombre || ''),
   };
   for (var i = 0; i < METRICAS.length; i++) {
-    var clave = METRICAS[i];
-    var bruto = r[clave];
-
-    if (esOpcional(clave)) {
-      // Vacio se queda vacio: convertirlo a 0 seria inventar un dato
-      salida[clave] = (bruto === '' || bruto === null || bruto === undefined)
-        ? '' : (Number(bruto) || 0);
-    } else {
-      salida[clave] = Number(bruto) || 0;
-    }
+    salida[METRICAS[i]] = Number(r[METRICAS[i]]) || 0;
   }
   return salida;
 }
@@ -569,10 +548,7 @@ function guardarRegistro(registro, pin) {
     fila.actualizado  = ahora();
 
     for (var m = 0; m < METRICAS.length; m++) {
-      var k = METRICAS[m];
-      var v = registro[k];
-      fila[k] = (esOpcional(k) && (v === '' || v === null || v === undefined))
-        ? '' : (Number(v) || 0);
+      fila[METRICAS[m]] = Number(registro[METRICAS[m]]) || 0;
     }
 
     if (previo) {

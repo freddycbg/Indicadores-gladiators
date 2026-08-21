@@ -249,18 +249,11 @@ al resolver, y se guarda en la columna `ganadores`. Un contest terminado no se
 archiva solo: queda "por resolver" hasta que un administrador diga si se pagó, no
 se cumplió o se canceló.
 
-### Pólizas: el campo opcional
-
-`polizas` es el único campo opcional del registro. Vacío significa **"no se
-anotó"**, que no es lo mismo que cero: los registros anteriores a la columna no
-lo traen, y guardarlos como cero haría que el ALP por póliza saliera infinito.
-
-Las métricas derivadas (ALP por póliza, pólizas por presentación) se calculan
-**solo sobre los registros que traen el dato**, numerador y denominador, y dicen
-sobre cuántos se calcularon. Donde no hay dato muestran `—`, nunca 0.
-
-Si la hoja todavía no tiene la columna, la página lo detecta y avisa que lo
-escrito ahí no se guardará.
+> **Nota histórica:** existió un campo `polizas` en el registro diario. Se
+> retiró porque en esta operación una venta es una póliza, así que duplicaba a
+> `pressSale` en la captura y su métrica derivada (ALP por póliza) era la misma
+> que ALP por venta. La columna puede seguir en la hoja sin estorbar; la
+> aplicación ya no la lee ni la escribe.
 
 ---
 

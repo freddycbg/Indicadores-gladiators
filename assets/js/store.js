@@ -128,7 +128,7 @@ const Store = (() => {
      nuevos, jerarquia distinta). Sin esto, un navegador que ya tenia la
      semilla vieja nunca recibia la nueva y quedaba con datos incoherentes
      respecto del codigo. Solo afecta al modo demo. */
-  const SEMILLA_VERSION = '10-polizas-opcionales';
+  const SEMILLA_VERSION = '11-sin-polizas';
 
   function leerLS(clave, porDefecto) {
     try {
@@ -223,10 +223,6 @@ const Store = (() => {
         const press     = Math.max(0, app - entre(0, 3));
         const pressSale = Math.max(0, press - entre(0, press));
 
-        // Las polizas son un campo nuevo: los registros de mas de tres
-        // semanas atras no lo traen, igual que en produccion. Sirve para
-        // ver que las metricas derivadas no mienten cuando falta el dato.
-        const anotaPolizas = d <= 20;
         registros.push({
           id: nuevoId(),
           fecha,
@@ -235,7 +231,6 @@ const Store = (() => {
           app,
           press,
           pressSale,
-          polizas: anotaPolizas ? pressSale + entre(0, 2) : '',
           callerCalls: entre(20, 85),
           noShow:      entre(0, 3),
           noCalifica:  entre(0, 2),

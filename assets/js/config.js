@@ -81,11 +81,6 @@ const CAMPOS = [
   { key: 'app',         label: 'Appointment (APP)',      corto: 'APP',           tipo: 'entero' },
   { key: 'press',       label: 'Presentaciones (PRESS)', corto: 'PRESS',         tipo: 'entero' },
   { key: 'pressSale',   label: 'PRESS SALE',             corto: 'PRESS SALE',    tipo: 'entero' },
-  // Opcional: los registros historicos no lo traen. Vacio significa "no se
-  // anoto", que NO es lo mismo que cero polizas — por eso no se convierte
-  // a 0 como los demas campos.
-  { key: 'polizas',     label: 'Pólizas vendidas',       corto: 'PÓLIZAS',       tipo: 'entero',
-    opcional: true },
   { key: 'pressNoSale', label: 'PRESS NO SALE',          corto: 'PRESS NO SALE', tipo: 'entero', mejor: 'bajo' },
   { key: 'callerCalls', label: 'Llamadas del Caller',    corto: 'CALLER',        tipo: 'entero' },
   { key: 'noShow',      label: 'NO SHOW',                corto: 'NO SHOW',       tipo: 'entero', mejor: 'bajo' },

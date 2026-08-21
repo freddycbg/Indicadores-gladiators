@@ -7,7 +7,6 @@ const App = {
   registrosStats: [],     // filtro actual del panel Resumen
   registrosReportes: [],  // filtro actual del panel Reportes
   editando: null,       // registro cargado en el formulario, si lo hay
-  columnasFaltantes: [],// campos opcionales que la hoja aún no tiene
   ordenReporte: { campo: 'alp', dir: 'desc' },  // orden del reporte consolidado
 };
 
@@ -146,15 +145,10 @@ function iniciarFormRegistro() {
     const agente = App.agentes.find(a => a.id === agenteId);
     const reg = { fecha, agenteId, agenteNombre: agente ? agente.nombre : '' };
 
-    // Campo vacío = 0, salvo en los opcionales: ahí vacío significa "no se
-    // anotó" y guardarlo como cero seria inventarse un dato.
+    // Campo vacío = 0. Es la única conversión implícita del formulario.
     for (const c of CAMPOS) {
       const raw = $('#f_' + c.key).value.trim();
-      if (raw === '') {
-        reg[c.key] = c.opcional ? '' : 0;
-      } else {
-        reg[c.key] = c.tipo === 'moneda' ? nDecimal(raw) : nEntero(raw);
-      }
+      reg[c.key] = raw === '' ? 0 : (c.tipo === 'moneda' ? nDecimal(raw) : nEntero(raw));
     }
 
     btn.disabled = true;
@@ -217,7 +211,6 @@ function modoEdicion(registro) {
 
   // Rellenar con lo ya reportado para que se corrija sobre eso.
   CAMPOS.forEach(c => {
-    if (c.opcional && !tieneDato(registro, c.key)) { $('#f_' + c.key).value = ''; return; }
     const v = Number(registro[c.key]) || 0;
     $('#f_' + c.key).value = v === 0 ? '' : v;
   });
@@ -286,9 +279,7 @@ async function eliminarRegistro(reg) {
 }
 
 async function pintarRecientes() {
-  const todos = await Store.listarRegistros();
-  revisarColumnasNuevas(todos);
-  const regs = todos.slice(0, 10);
+  const regs = (await Store.listarRegistros()).slice(0, 10);
   const tabla = $('#tablaRecientes');
   tabla.innerHTML = '';
 
@@ -313,8 +304,8 @@ async function pintarRecientes() {
       el('td', { text: fechaCorta(r.fecha) }),
       el('td', { text: r.agenteNombre }),
       ...CAMPOS.map(c => el('td', {
-        class: 'num' + (tieneDato(r, c.key) && Number(r[c.key]) ? '' : ' cero'),
-        text: c.opcional ? fmtOpcional(r, c) : fmt(r[c.key], c.tipo),
+        class: 'num' + (Number(r[c.key]) ? '' : ' cero'),
+        text: fmt(r[c.key], c.tipo),
       })),
       el('td', { class: 'acc' }, celdaAcciones(r)),
     ])
@@ -448,49 +439,19 @@ async function refrescarReportes() {
   pintarDetalle();
 }
 
-/**
- * ¿El Apps Script publicado conoce los campos opcionales nuevos?
- *
- * El script devuelve solo las claves que él conoce, así que si NINGÚN
- * registro trae la clave es que el backend se quedó atrás. Importa
- * detectarlo: un script viejo ignora en silencio las columnas que no
- * conoce, y el agente vería "guardado" mientras el dato se pierde.
- */
-function revisarColumnasNuevas(registros) {
-  if (Store.esDemo || !registros.length) return;
-
-  const faltan = CAMPOS
-    .filter(c => c.opcional)
-    .filter(c => !registros.some(r => c.key in r))
-    .map(c => c.corto);
-
-  App.columnasFaltantes = faltan;
-  revisarBackend();
-}
-
 /** Muestra el aviso si el Apps Script publicado se quedó atrás. */
 function revisarBackend() {
   const viejo = Store.backendDesactualizado && Store.backendDesactualizado();
-  const faltan = App.columnasFaltantes || [];
   const aviso = $('#avisoBackend');
 
-  aviso.hidden = !viejo && !faltan.length;
+  aviso.hidden = !viejo;
   if (aviso.hidden) return;
 
-  aviso.innerHTML = '';
-  if (viejo) {
-    aviso.appendChild(el('span', { text:
-      'La hoja de Google todavía no tiene las funciones de Metas y Contests. ' +
-      'Esas pestañas se verán vacías hasta que se actualice el Apps Script. ' }));
-  }
-  if (faltan.length) {
-    aviso.appendChild(el('strong', { text:
-      `La hoja no tiene todavía la columna ${faltan.join(', ')}: ` +
-      'lo que se escriba en ese campo NO se guardará. ' }));
-  }
-  aviso.appendChild(el('span', { text:
-    'Para arreglarlo: copiar apps-script/Codigo.gs, ejecutar sincronizarColumnas ' +
-    'y volver a implementar con versión nueva. El resto funciona con normalidad.' }));
+  aviso.textContent =
+    'La hoja de Google todavía no tiene las funciones de Metas y Contests. ' +
+    'Esas pestañas se verán vacías hasta que se actualice el Apps Script: ' +
+    'copiar apps-script/Codigo.gs, ejecutar sincronizarColumnas y volver a ' +
+    'implementar con versión nueva. El resto funciona con normalidad.';
 }
 
 /** Recupera la última línea elegida en este dispositivo. */
@@ -606,56 +567,15 @@ function agruparPorAgente(regs) {
   const mapa = new Map();
   for (const r of regs) {
     if (!mapa.has(r.agenteId)) {
-      const base = { agenteId: r.agenteId, nombre: r.agenteNombre, dias: new Set(), _regs: [] };
+      const base = { agenteId: r.agenteId, nombre: r.agenteNombre, dias: new Set() };
       CAMPOS.forEach(c => { base[c.key] = 0; });
       mapa.set(r.agenteId, base);
     }
     const a = mapa.get(r.agenteId);
     a.dias.add(r.fecha);
-    a._regs.push(r);
-    // Un campo opcional sin dato no suma cero: sencillamente no participa
-    CAMPOS.forEach(c => {
-      if (c.opcional && !tieneDato(r, c.key)) return;
-      a[c.key] += Number(r[c.key]) || 0;
-    });
+    CAMPOS.forEach(c => { a[c.key] += Number(r[c.key]) || 0; });
   }
-  return [...mapa.values()].map(a => ({
-    ...a,
-    dias: a.dias.size,
-    pol: metricasPolizas(a._regs),
-  }));
-}
-
-/**
- * Métricas de pólizas sobre un conjunto de registros.
- *
- * Se calculan SOLO con los registros que traen el dato: si se sumara el
- * ALP de todos contra las pólizas de unos pocos, el tamaño promedio de
- * venta saldría inflado. Devuelve además la cobertura, para poder decir
- * sobre cuántos registros se está hablando.
- */
-function metricasPolizas(registros) {
-  const con = registros.filter(r => tieneDato(r, 'polizas'));
-
-  const polizas = con.reduce((t, r) => t + (Number(r.polizas) || 0), 0);
-  const alp     = con.reduce((t, r) => t + (Number(r.alp) || 0), 0);
-  const press   = con.reduce((t, r) => t + (Number(r.press) || 0), 0);
-
-  return {
-    polizas, alp, press,
-    conDato: con.length,
-    total: registros.length,
-    hayDato: con.length > 0,
-    alpPorPoliza:    polizas ? alp / polizas : null,
-    polizasPorPress: press ? polizas / press : null,
-  };
-}
-
-/** Texto de cobertura, solo cuando el dato está incompleto. */
-function coberturaPolizas(m) {
-  if (!m.hayDato) return 'Ningún registro del período tiene pólizas anotadas';
-  if (m.conDato === m.total) return `${fmt(m.polizas)} póliza(s) en ${m.total} registro(s)`;
-  return `${fmt(m.polizas)} póliza(s) · solo ${m.conDato} de ${m.total} registros lo tienen anotado`;
+  return [...mapa.values()].map(a => ({ ...a, dias: a.dias.size }));
 }
 
 /* --- Tasas de conversión: son razones, no series — van en tabla -------- */
@@ -669,7 +589,6 @@ function pintarTasas() {
   const alp       = suma(regs, 'alp');
 
   const referidos = suma(regs, 'referidos');
-  const pol = metricasPolizas(regs);
 
   const filas = [
     ['Llamadas → Appointment', porcentaje(app, caller),       `${fmt(app)} de ${fmt(caller)}`],
@@ -680,12 +599,6 @@ function pintarTasas() {
       `${fmt(referidos)} referidos de ${fmt(press)} presentaciones`, 'semaforo'],
     ['ALP por venta', pressSale ? fmt(alp / pressSale, 'moneda') : '—', `${fmt(alp, 'moneda')} total`],
     ['ALP por presentación', press ? fmt(alp / press, 'moneda') : '—',  `${fmt(press)} presentaciones`],
-    ['ALP por póliza',
-      pol.alpPorPoliza === null ? '—' : fmt(pol.alpPorPoliza, 'moneda'),
-      `Tamaño promedio de venta · ${coberturaPolizas(pol)}`],
-    ['Pólizas por presentación',
-      pol.polizasPorPress === null ? '—' : pol.polizasPorPress.toFixed(2),
-      `Cuántas cierra por oportunidad · ${coberturaPolizas(pol)}`],
   ];
 
   const cont = $('#tasas');
@@ -765,9 +678,6 @@ function pintarReporte() {
     dias:        f => f.dias,
     constancia:  f => (habiles ? f.dias / habiles : 0),
     refPress:    f => (f.press ? f.referidos / f.press : -1),
-    // Sin dato al final: "no se anotó" no es lo mismo que "el peor"
-    alpPoliza:   f => (f.pol.alpPorPoliza === null ? -1 : f.pol.alpPorPoliza),
-    polizaPress: f => (f.pol.polizasPorPress === null ? -1 : f.pol.polizasPorPress),
   };
   CAMPOS.forEach(c => { valorDe[c.key] = f => f[c.key]; });
 
@@ -803,10 +713,6 @@ function pintarReporte() {
       th('refPress', 'REF/PRESS', { class: 'num',
         title: 'Referidos por presentación · ' +
                `verde ≥ ${RATIO_REF_PRESS.verde}, amarillo ≥ ${RATIO_REF_PRESS.amarillo}` }),
-      th('alpPoliza', 'ALP/PÓLIZA', { class: 'num',
-        title: 'Tamaño promedio de venta. Solo cuenta los registros con pólizas anotadas.' }),
-      th('polizaPress', 'PÓL/PRESS', { class: 'num',
-        title: 'Pólizas por presentación: cuántas cierra por oportunidad.' }),
       ...CAMPOS.map(c => th(c.key, c.corto, { class: 'num' })),
     ]),
   ]));
@@ -817,11 +723,9 @@ function pintarReporte() {
       el('td', { class: 'num', text: f.dias }),
       celdaConstancia(f.dias, habiles),
       el('td', { class: 'num' }, [pastillaRefPress(f.referidos, f.press)]),
-      celdaPolizas(f.pol.alpPorPoliza, 'moneda', f.pol),
-      celdaPolizas(f.pol.polizasPorPress, 'decimal', f.pol),
       ...CAMPOS.map(c => el('td', {
-        class: 'num' + (celdaVacia(f, c) ? ' cero' : ''),
-        text: celdaVacia(f, c) ? '—' : fmt(f[c.key], c.tipo),
+        class: 'num' + (f[c.key] ? '' : ' cero'),
+        text: fmt(f[c.key], c.tipo),
       })),
     ])
   )));
@@ -831,7 +735,6 @@ function pintarReporte() {
   const diasConActividad = new Set(App.registrosReportes.map(r => r.fecha)).size;
   const totalRef   = filas.reduce((t, f) => t + f.referidos, 0);
   const totalPress = filas.reduce((t, f) => t + f.press, 0);
-  const polTotal   = metricasPolizas(App.registrosReportes);
 
   tabla.appendChild(el('tfoot', {}, [
     el('tr', {}, [
@@ -839,12 +742,9 @@ function pintarReporte() {
       el('td', { class: 'num', text: diasConActividad }),
       celdaConstancia(diasConActividad, habiles, 'El equipo tuvo actividad en estos días del período'),
       el('td', { class: 'num' }, [pastillaRefPress(totalRef, totalPress)]),
-      celdaPolizas(polTotal.alpPorPoliza, 'moneda', polTotal),
-      celdaPolizas(polTotal.polizasPorPress, 'decimal', polTotal),
       ...CAMPOS.map(c => el('td', {
         class: 'num',
-        text: c.opcional && !polTotal.hayDato ? '—'
-          : fmt(filas.reduce((t, f) => t + f[c.key], 0), c.tipo),
+        text: fmt(filas.reduce((t, f) => t + f[c.key], 0), c.tipo),
       })),
     ]),
   ]));
@@ -858,26 +758,6 @@ function ordenarReportePor(campo) {
     // Los nombres se leen de A a Z; los números interesan de mayor a menor.
     : { campo, dir: campo === 'nombre' ? 'asc' : 'desc' };
   pintarReporte();
-}
-
-/** Un campo opcional sin ningún registro que lo traiga se muestra vacío. */
-function celdaVacia(fila, campo) {
-  return campo.opcional && fila.pol && !fila.pol.hayDato;
-}
-
-/** Métrica derivada de pólizas: raya cuando no hay dato con qué calcularla. */
-function celdaPolizas(valor, tipo, pol) {
-  if (valor === null) {
-    return el('td', { class: 'num cero',
-      title: pol.hayDato ? 'Sin base para calcularlo en este período'
-                         : 'Ningún registro del período tiene pólizas anotadas',
-      text: '—' });
-  }
-  return el('td', {
-    class: 'num',
-    title: coberturaPolizas(pol),
-    text: tipo === 'decimal' ? valor.toFixed(2) : fmt(valor, tipo),
-  });
 }
 
 /** Celda de constancia con su semáforo. Sin días hábiles no hay ratio. */
@@ -925,8 +805,8 @@ function pintarDetalle() {
       el('td', { text: fechaCorta(r.fecha) }),
       el('td', {}, [enlaceAgente(r.agenteId, r.agenteNombre)]),
       ...CAMPOS.map(c => el('td', {
-        class: 'num' + (tieneDato(r, c.key) && Number(r[c.key]) ? '' : ' cero'),
-        text: c.opcional ? fmtOpcional(r, c) : fmt(r[c.key], c.tipo),
+        class: 'num' + (Number(r[c.key]) ? '' : ' cero'),
+        text: fmt(r[c.key], c.tipo),
       })),
       el('td', { class: 'acc no-imprimir' }, celdaAcciones(r)),
     ])
@@ -3287,14 +3167,13 @@ function seccionResumenJunta(registros, rango, alcance, etiquetaPeriodo) {
 
   KPIS.forEach(key => {
     const campo = CAMPOS.find(c => c.key === key);
-    const sinDato = campo.opcional && !t._pol.hayDato;
-    const texto = sinDato ? '—' : fmt(t[key], campo.tipo);
+    const texto = fmt(t[key], campo.tipo);
 
     cont.appendChild(el('div', { class: 'junta-cifra' }, [
       el('span', { class: 'junta-cifra-etq', text: campo.corto }),
       el('span', { class: claseCifra(texto), text: texto }),
       el('span', { class: 'junta-cifra-sub',
-        text: sinDato ? 'sin anotar' : `${fmtPromedio(t[key] / dias, campo.tipo)} por día` }),
+        text: `${fmtPromedio(t[key] / dias, campo.tipo)} por día` }),
     ]));
   });
 
@@ -3340,24 +3219,13 @@ const RATIOS_FICHA = [
     calc: t => t.press ? t.referidos / t.press : null },
   { key: 'alpVenta',     label: 'ALP por venta',          tipo: 'moneda',
     calc: t => t.pressSale ? t.alp / t.pressSale : null },
-  // Estos dos solo existen si el día trae pólizas anotadas
-  { key: 'alpPoliza',    label: 'ALP por póliza',         tipo: 'moneda',
-    calc: t => (t._pol && t._pol.alpPorPoliza !== undefined) ? t._pol.alpPorPoliza : null },
-  { key: 'polizaPress',  label: 'Pólizas por presentación', tipo: 'decimal',
-    calc: t => (t._pol && t._pol.polizasPorPress !== undefined) ? t._pol.polizasPorPress : null },
 ];
 
 /** Suma los campos del registro sobre un conjunto. */
 function totalesDe(registros) {
   const t = {};
   CAMPOS.forEach(c => { t[c.key] = 0; });
-  registros.forEach(r => CAMPOS.forEach(c => {
-    if (c.opcional && !tieneDato(r, c.key)) return;
-    t[c.key] += Number(r[c.key]) || 0;
-  }));
-  // Las métricas de pólizas viajan aparte porque necesitan saber sobre
-  // cuántos registros se calcularon
-  t._pol = metricasPolizas(registros);
+  registros.forEach(r => CAMPOS.forEach(c => { t[c.key] += Number(r[c.key]) || 0; }));
   return t;
 }
 
@@ -3675,8 +3543,8 @@ function pintarFichaRegistros(registros) {
     el('tr', {}, [
       el('td', { text: fechaCorta(r.fecha) }),
       ...CAMPOS.map(c => el('td', {
-        class: 'num' + (tieneDato(r, c.key) && Number(r[c.key]) ? '' : ' cero'),
-        text: c.opcional ? fmtOpcional(r, c) : fmt(r[c.key], c.tipo),
+        class: 'num' + (Number(r[c.key]) ? '' : ' cero'),
+        text: fmt(r[c.key], c.tipo),
       })),
     ])
   )));
