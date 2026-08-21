@@ -1739,6 +1739,41 @@ body.con-junta { overflow: hidden; }
                    font-size: clamp(.8rem, 1vw, 1rem); }
 .junta .barra { height: 11px; background: rgba(255, 255, 255, .12); }
 
+/* Cifras en bruto del periodo, para abrir la junta */
+.junta-resumen {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+  gap: 16px;
+}
+.junta-cifra {
+  border: 1px solid rgba(255, 255, 255, .13);
+  border-radius: var(--r-md);
+  padding: 16px 20px;
+  background: rgba(255, 255, 255, .04);
+}
+.junta-cifra--contexto { border-left: 3px solid var(--oro); }
+.junta-cifra-etq {
+  display: block;
+  color: #b6bcca;
+  letter-spacing: .05em;
+  text-transform: uppercase;
+  font-size: clamp(.72rem, .92vw, .92rem);
+}
+.junta-cifra-val {
+  display: block;
+  margin: 4px 0 2px;
+  font-weight: 700;
+  letter-spacing: -.02em;
+  font-variant-numeric: tabular-nums;
+  font-size: clamp(1.7rem, 3.1vw, 3.1rem);
+}
+.junta-cifra-sub {
+  display: block;
+  color: #8e96a6;
+  font-size: clamp(.75rem, .95vw, .95rem);
+  font-variant-numeric: tabular-nums;
+}
+
 .junta-ratios {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));

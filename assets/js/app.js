@@ -2968,14 +2968,15 @@ async function pintarModoJunta(lineaId) {
   const cuantos = App.agentes.filter(a =>
     (!alcance || alcance.has(a.id)) && a.rol === 'Agente' && a.activo !== false).length;
   $('#juntaSub').textContent =
-    `${etiquetaPeriodo} · ${textoRango(rango.desde, rango.hasta)} · ${cuantos} agente(s)`;
+    `${etiquetaPeriodo} · ${textoRango(rango.desde, rango.hasta)} · ${cuantos} agente(s) de campo`;
 
   // Una sola consulta cubriendo el periodo y su comparable anterior
   const registros = await Store.listarRegistros({ desde: previo.desde, hasta: rango.hasta });
 
-  // Orden de la junta: primero cómo va el equipo en conjunto, luego las
-  // personas —quién destaca y quién necesita ayuda—, después la tendencia
-  // contra el periodo anterior y al final los contests.
+  // Orden de la junta: primero las cifras en bruto, luego qué tan bien se
+  // convierten, después las personas —quién destaca y quién necesita
+  // ayuda—, la tendencia contra el periodo anterior y al final los contests.
+  cuerpo.appendChild(seccionResumenJunta(registros, rango, alcance, etiquetaPeriodo));
   cuerpo.appendChild(seccionEfectividadJunta(registros, rango, alcance, etiquetaPeriodo));
   cuerpo.appendChild(seccionLeaderboard(registros, rango, previo, alcance, etiquetaPeriodo));
   cuerpo.appendChild(seccionAtencionJunta(registros, rango, alcance, etiquetaPeriodo));
@@ -3240,6 +3241,52 @@ function seccionComparativaJunta(registros, rango, previo, alcance, etiquetaPeri
   return seccionJunta(
     `${etiquetaPeriodo} contra el periodo anterior · ${textoRango(previo.desde, previo.hasta)}`,
     tabla);
+}
+
+/**
+ * Los números en bruto del periodo: lo primero que se proyecta, para que
+ * todos tengan el mismo punto de partida antes de entrar en ratios.
+ */
+function seccionResumenJunta(registros, rango, alcance, etiquetaPeriodo) {
+  const dentro = registros.filter(r =>
+    r.fecha >= rango.desde && r.fecha <= rango.hasta &&
+    (!alcance || alcance.has(r.agenteId)));
+
+  const t = totalesDe(dentro);
+  const dias = new Set(dentro.map(r => r.fecha)).size || 1;
+
+  const cont = el('div', { class: 'junta-resumen' });
+
+  // Cuánta gente hay detrás de las cifras: sin esto, 343 citas no dice si
+  // son de veinte personas o de tres.
+  //
+  // Los dos números cuentan lo mismo —toda persona activa del alcance—
+  // porque los líderes también producen. Contar contribuyentes con líderes
+  // y activos sin ellos daba cosas como "20 de 13".
+  const contribuyentes = new Set(dentro.map(r => r.agenteId)).size;
+  const activos = App.agentes.filter(a =>
+    (!alcance || alcance.has(a.id)) && a.activo !== false).length;
+
+  cont.appendChild(el('div', { class: 'junta-cifra junta-cifra--contexto' }, [
+    el('span', { class: 'junta-cifra-etq', text: 'Agentes' }),
+    el('span', { class: 'junta-cifra-val', text: fmt(contribuyentes, 'entero') }),
+    el('span', { class: 'junta-cifra-sub', text: `de ${activos} activo(s) · ${dias} día(s)` }),
+  ]));
+
+  KPIS.forEach(key => {
+    const campo = CAMPOS.find(c => c.key === key);
+    const sinDato = campo.opcional && !t._pol.hayDato;
+
+    cont.appendChild(el('div', { class: 'junta-cifra' }, [
+      el('span', { class: 'junta-cifra-etq', text: campo.corto }),
+      el('span', { class: 'junta-cifra-val',
+        text: sinDato ? '—' : fmt(t[key], campo.tipo) }),
+      el('span', { class: 'junta-cifra-sub',
+        text: sinDato ? 'sin anotar' : `${fmtPromedio(t[key] / dias, campo.tipo)} por día` }),
+    ]));
+  });
+
+  return seccionJunta(`Resumen · ${etiquetaPeriodo}`, cont);
 }
 
 function seccionEfectividadJunta(registros, rango, alcance, etiquetaPeriodo) {
