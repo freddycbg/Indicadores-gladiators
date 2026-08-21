@@ -1742,7 +1742,7 @@ body.con-junta { overflow: hidden; }
 /* Cifras en bruto del periodo, para abrir la junta */
 .junta-resumen {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(230px, 1fr));
   gap: 16px;
 }
 .junta-cifra {
@@ -1750,6 +1750,7 @@ body.con-junta { overflow: hidden; }
   border-radius: var(--r-md);
   padding: 16px 20px;
   background: rgba(255, 255, 255, .04);
+  min-width: 0;
 }
 .junta-cifra--contexto { border-left: 3px solid var(--oro); }
 .junta-cifra-etq {
@@ -1766,7 +1767,12 @@ body.con-junta { overflow: hidden; }
   letter-spacing: -.02em;
   font-variant-numeric: tabular-nums;
   font-size: clamp(1.7rem, 3.1vw, 3.1rem);
+  white-space: nowrap;
 }
+/* Las cifras largas se encogen para caber en su tarjeta en vez de
+   desbordarla; las cortas conservan todo su tamaño. */
+.junta-cifra-val--l  { font-size: clamp(1.4rem, 2.2vw, 2.2rem); }
+.junta-cifra-val--xl { font-size: clamp(1.15rem, 1.75vw, 1.75rem); }
 .junta-cifra-sub {
   display: block;
   color: #8e96a6;

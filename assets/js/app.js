@@ -3244,6 +3244,17 @@ function seccionComparativaJunta(registros, rango, previo, alcance, etiquetaPeri
 }
 
 /**
+ * Ajusta el tamaño de una cifra a su longitud. Un ALP como "1,213,786.00"
+ * ocupa el triple que un "58" y se salía de la tarjeta; en vez de encoger
+ * todas las cifras por igual, solo se encogen las largas.
+ */
+function claseCifra(texto) {
+  const n = String(texto).length;
+  return 'junta-cifra-val' +
+    (n > 10 ? ' junta-cifra-val--xl' : n > 6 ? ' junta-cifra-val--l' : '');
+}
+
+/**
  * Los números en bruto del periodo: lo primero que se proyecta, para que
  * todos tengan el mismo punto de partida antes de entrar en ratios.
  */
@@ -3269,18 +3280,19 @@ function seccionResumenJunta(registros, rango, alcance, etiquetaPeriodo) {
 
   cont.appendChild(el('div', { class: 'junta-cifra junta-cifra--contexto' }, [
     el('span', { class: 'junta-cifra-etq', text: 'Agentes' }),
-    el('span', { class: 'junta-cifra-val', text: fmt(contribuyentes, 'entero') }),
+    el('span', { class: claseCifra(fmt(contribuyentes, 'entero')),
+                 text: fmt(contribuyentes, 'entero') }),
     el('span', { class: 'junta-cifra-sub', text: `de ${activos} activo(s) · ${dias} día(s)` }),
   ]));
 
   KPIS.forEach(key => {
     const campo = CAMPOS.find(c => c.key === key);
     const sinDato = campo.opcional && !t._pol.hayDato;
+    const texto = sinDato ? '—' : fmt(t[key], campo.tipo);
 
     cont.appendChild(el('div', { class: 'junta-cifra' }, [
       el('span', { class: 'junta-cifra-etq', text: campo.corto }),
-      el('span', { class: 'junta-cifra-val',
-        text: sinDato ? '—' : fmt(t[key], campo.tipo) }),
+      el('span', { class: claseCifra(texto), text: texto }),
       el('span', { class: 'junta-cifra-sub',
         text: sinDato ? 'sin anotar' : `${fmtPromedio(t[key] / dias, campo.tipo)} por día` }),
     ]));
