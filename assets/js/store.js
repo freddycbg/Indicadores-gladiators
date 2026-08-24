@@ -123,6 +123,7 @@ const Store = (() => {
   const LS_METAS     = 'gt_metas_v1';
   const LS_CONTESTS  = 'gt_contests_v1';
   const LS_SEMILLA   = 'gt_semilla_version';
+  const LS_MULTIMEDIA= 'gt_multimedia_v1';   // solo modo demo
 
   /* Subir este numero al cambiar la FORMA de los datos de prueba (campos
      nuevos, jerarquia distinta). Sin esto, un navegador que ya tenia la
@@ -647,6 +648,30 @@ const Store = (() => {
       sembrarDemo();
       return true;
     },
+
+    /* En demo no hay Drive: la imagen se queda como data URL en el propio
+       navegador. Sirve para probar la interfaz completa sin tocar nada
+       real. localStorage ronda los 5 MB, asi que aqui se es mas estricto
+       que en produccion. */
+    async subirMultimedia(archivo) {
+      const bytes = Math.ceil((archivo.datos || '').length * 3 / 4);
+      if (bytes > 1.5 * 1024 * 1024) {
+        throw new Error('En modo de prueba las imagenes se guardan en el ' +
+                        'navegador, asi que el tope es 1.5 MB.');
+      }
+      const id = nuevoId();
+      const guardadas = leerLS(LS_MULTIMEDIA, {});
+      guardadas[id] = `data:${archivo.tipo};base64,${archivo.datos}`;
+      escribirLS(LS_MULTIMEDIA, guardadas);
+      return { id, nombre: archivo.nombre, tipo: archivo.tipo, bytes };
+    },
+
+    async eliminarMultimedia(fileId) {
+      const guardadas = leerLS(LS_MULTIMEDIA, {});
+      delete guardadas[fileId];
+      escribirLS(LS_MULTIMEDIA, guardadas);
+      return true;
+    },
   };
 
   /* =======================================================================
@@ -806,6 +831,12 @@ const Store = (() => {
 
     validarAdmin:      (pin)          => llamar('validarAdmin', { pinPrueba: pin }),
     reiniciarDemo:     async ()       => { throw new Error('No disponible en modo Sheets.'); },
+
+    // No pasan por `escribir`: no tocan ninguna hoja, asi que no hay nada
+    // que invalidar. Lo que si cambia la hoja es guardar el contest con la
+    // lista de imagenes ya actualizada, y eso ya invalida por su cuenta.
+    subirMultimedia:   (archivo)      => llamar('subirMultimedia', { archivo }),
+    eliminarMultimedia:(fileId)       => llamar('eliminarMultimedia', { fileId }),
   };
 
   /* =======================================================================
@@ -824,6 +855,23 @@ const Store = (() => {
 
   const backend = MODO_EFECTIVO === 'sheets' ? sheets : demo;
 
+  /**
+   * URL con la que mostrar una imagen guardada.
+   *
+   * El enlace de "compartir" de Drive —/file/d/ID/view— NO sirve dentro de
+   * una etiqueta <img>: devuelve una pagina web, no la imagen, y se ve un
+   * hueco roto. El de miniatura si devuelve la imagen, y ademas deja pedir
+   * el ancho, asi que la rejilla no descarga el original de 3 MB para
+   * mostrarlo a 300 px.
+   */
+  function urlMultimedia(fileId, ancho = 1200) {
+    if (MODO_EFECTIVO === 'demo') {
+      const guardadas = leerLS(LS_MULTIMEDIA, {});
+      return guardadas[fileId] || '';
+    }
+    return `https://drive.google.com/thumbnail?id=${encodeURIComponent(fileId)}&sz=w${ancho}`;
+  }
+
   return {
     ...backend,
     esDemo: MODO_EFECTIVO === 'demo',
@@ -831,6 +879,7 @@ const Store = (() => {
     esPaginaDePrueba: enLocalhost && CONFIG.MODO_LOCALHOST === 'demo',
     /** true si el Apps Script publicado aun no tiene Metas ni Contests. */
     backendDesactualizado: () => backendViejo,
+    urlMultimedia,
   };
 })();
 

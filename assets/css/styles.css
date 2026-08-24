@@ -910,6 +910,124 @@ input:invalid:not(:placeholder-shown) { border-color: var(--critico); }
   color: var(--tinta-2);
 }
 
+/* ---------- Imágenes de los contests -------------------------------------
+   Miniaturas con proporción fija: una tira de imágenes de alturas
+   distintas se lee como un desorden, y estas suelen venir de capturas de
+   móvil y de diseños apaisados mezclados.
+   ------------------------------------------------------------------------- */
+.subir-zona {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.multimedia-rejilla,
+.contest-galeria {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(130px, 1fr));
+  gap: 10px;
+}
+.multimedia-rejilla:empty { display: none; }
+.multimedia-rejilla { margin-top: 12px; }
+.contest-galeria     { margin: 14px 0 4px; }
+
+.multimedia-item {
+  position: relative;
+  margin: 0;
+  border-radius: var(--r-md);
+  overflow: hidden;
+  border: 1px solid var(--borde);
+  background: var(--superficie-2);
+}
+
+.multimedia-item img,
+.contest-galeria-item img {
+  display: block;
+  width: 100%;
+  aspect-ratio: 4 / 3;
+  object-fit: cover;
+  cursor: zoom-in;
+}
+
+.multimedia-quitar {
+  position: absolute;
+  top: 5px;
+  right: 5px;
+  width: 26px;
+  height: 26px;
+  border: 0;
+  border-radius: 50%;
+  cursor: pointer;
+  font-size: .8rem;
+  line-height: 1;
+  color: #fff;
+  /* Fondo propio y opaco: encima de una foto clara, un botón traslúcido
+     desaparece justo cuando hace falta. */
+  background: rgba(20, 20, 22, .78);
+}
+.multimedia-quitar:hover { background: var(--critico); }
+
+.contest-galeria-item {
+  padding: 0;
+  border: 1px solid var(--borde);
+  border-radius: var(--r-md);
+  overflow: hidden;
+  background: var(--superficie-2);
+  cursor: zoom-in;
+  transition: border-color .12s;
+}
+.contest-galeria-item:hover      { border-color: var(--acento); }
+.contest-galeria-item:focus-visible { outline: 2px solid var(--acento); outline-offset: 2px; }
+
+/* ---------- Visor a pantalla completa ------------------------------------ */
+.visor {
+  border: 0;
+  padding: 0;
+  max-width: 96vw;
+  max-height: 96vh;
+  background: transparent;
+  overflow: visible;
+}
+.visor::backdrop { background: rgba(4, 8, 16, .88); }
+
+.visor img {
+  display: block;
+  max-width: 96vw;
+  max-height: 86vh;
+  width: auto;
+  height: auto;
+  border-radius: var(--r-md);
+  background: var(--superficie);
+}
+
+.visor-pie {
+  margin: 10px 0 0;
+  text-align: center;
+  font-size: .85rem;
+  color: #e8e6e1;          /* sobre el fondo oscuro del visor, no sobre la tarjeta */
+}
+
+.visor-cerrar {
+  position: absolute;
+  top: -14px;
+  right: -14px;
+  width: 36px;
+  height: 36px;
+  border: 0;
+  border-radius: 50%;
+  cursor: pointer;
+  font-size: 1rem;
+  color: #fff;
+  background: rgba(20, 20, 22, .92);
+}
+.visor-cerrar:hover { background: var(--critico); }
+
+@media (max-width: 560px) {
+  /* Pegado a la esquina: fuera del recuadro se saldría de la pantalla. */
+  .visor-cerrar { top: 6px; right: 6px; }
+}
+
 /* Cabeceras que ordenan al pulsarlas */
 .tabla th.ordenable {
   cursor: pointer;

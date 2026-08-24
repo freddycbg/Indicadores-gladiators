@@ -9,7 +9,7 @@
      evita algo peor: que el navegador estrene este HTML y siga usando el
      JavaScript viejo que ya tenia guardado. Sin el, esa mezcla de mitades
      rompe la pagina de formas raras; con el, o esta todo viejo o todo nuevo. -->
-<link rel="stylesheet" href="assets/css/styles.css?v=3">
+<link rel="stylesheet" href="assets/css/styles.css?v=4">
 <link rel="icon" type="image/png" href="assets/img/favicon.png">
 <meta name="theme-color" content="#0A1730">
 </head>
@@ -562,6 +562,26 @@
 
     <hr class="separador">
 
+    <!-- Imágenes con las indicaciones del contest -->
+    <div class="campo">
+      <label>Imágenes del contest</label>
+      <p class="ayuda">
+        Las indicaciones, el premio, lo que quieras que vean los agentes.
+        Se suben al pulsar y se guardan al guardar el contest.
+      </p>
+
+      <div class="subir-zona" id="ct_subirZona">
+        <input type="file" id="ct_archivo" accept="image/png,image/jpeg,image/webp,image/gif"
+               multiple hidden>
+        <button type="button" class="btn btn-suave" id="ct_btnSubir">Elegir imágenes…</button>
+        <span class="ayuda" id="ct_subirEstado"></span>
+      </div>
+
+      <div class="multimedia-rejilla" id="ct_multimedia"></div>
+    </div>
+
+    <hr class="separador">
+
     <div class="campo">
       <label>Requisitos <span class="req">*</span></label>
       <div id="ct_requisitos"></div>
@@ -622,6 +642,15 @@
   </form>
 </dialog>
 
+<!-- ================= VISOR DE IMAGEN ================= -->
+<!-- Una imagen de indicaciones lleva texto: en la tarjeta se ve pequeña, -->
+<!-- así que hace falta poder abrirla a pantalla completa para leerla.    -->
+<dialog class="visor" id="visorImagen">
+  <button type="button" class="visor-cerrar" id="visorCerrar" aria-label="Cerrar">✕</button>
+  <img id="visorImg" alt="">
+  <p class="visor-pie" id="visorPie"></p>
+</dialog>
+
 <!-- ================= MODO JUNTA ================= -->
 <!-- Pantalla completa para proyectar: sin filtros, sin exportar, sin    -->
 <!-- barra de navegación. Se sale con Esc.                              -->
@@ -655,10 +684,10 @@
   <span id="pieModo"></span>
 </footer>
 
-<script src="assets/js/config.js?v=3"></script>
-<script src="assets/js/util.js?v=3"></script>
-<script src="assets/js/store.js?v=3"></script>
-<script src="assets/js/charts.js?v=3"></script>
-<script src="assets/js/app.js?v=3"></script>
+<script src="assets/js/config.js?v=4"></script>
+<script src="assets/js/util.js?v=4"></script>
+<script src="assets/js/store.js?v=4"></script>
+<script src="assets/js/charts.js?v=4"></script>
+<script src="assets/js/app.js?v=4"></script>
 </body>
 </html>
