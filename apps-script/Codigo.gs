@@ -33,11 +33,30 @@ var HOJA_CONTESTS = 'Contests';
    "ganadores" son los ids de quienes realmente recibieron el premio: el
    sorteo se hace entre quienes calificaron, asi que calificar no es ganar
    y no se puede deducir de los reportes. */
+/* "multimedia" son las imagenes de indicaciones: una lista de objetos
+   {id, nombre, tipo}. Solo se guarda la referencia al archivo de Drive,
+   nunca el archivo: una celda topa en 50 000 caracteres y ademas reventaria
+   el cache de lectura, que topa en 100 KB por trozo. */
 var COL_CONTESTS = ['id', 'nombre', 'desde', 'hasta', 'premioTipo', 'premio',
                     'requisitos', 'combinacion', 'alcanceTipo', 'alcanceLinea',
-                    'alcanceIds', 'estatus', 'ganadores', 'creado', 'actualizado'];
+                    'alcanceIds', 'estatus', 'ganadores', 'multimedia',
+                    'creado', 'actualizado'];
 
-var CONTESTS_JSON = ['requisitos', 'alcanceIds', 'ganadores'];
+var CONTESTS_JSON = ['requisitos', 'alcanceIds', 'ganadores', 'multimedia'];
+
+/* Carpeta de Drive donde viven las imagenes de los contests. Se crea sola
+   la primera vez. */
+var CARPETA_MULTIMEDIA = "Gladiator's Team — Contests";
+
+/* Tope por archivo, en bytes ya decodificados. La pagina ademas reduce las
+   imagenes grandes antes de mandarlas, asi que llegar aqui arriba significa
+   que algo no es una imagen normal. */
+var MAX_BYTES_MULTIMEDIA = 8 * 1024 * 1024;
+
+/* Solo imagenes: es lo que se pidio y lo unico que la pagina sabe mostrar
+   incrustado. Aceptar PDF o video obligaria a abrirlos fuera, que es justo
+   lo que se queria evitar. */
+var TIPOS_MULTIMEDIA = ['image/png', 'image/jpeg', 'image/webp', 'image/gif'];
 
 var COL_AGENTES = ['id', 'nombre', 'equipo', 'rol', 'reportaA', 'activo', 'creado'];
 
@@ -71,9 +90,12 @@ var METRICAS = ['app', 'press', 'pressSale', 'pressNoSale', 'callerCalls',
  */
 var DIAS_EDICION_LIBRE = 7;
 
-/* Acciones que exigen PIN de administrador siempre */
+/* Acciones que exigen PIN de administrador siempre.
+   Subir y borrar multimedia van aqui: quien no puede editar un contest
+   tampoco deberia poder colgarle imagenes ni quitarselas. */
 var SOLO_ADMIN = ['crearAgente', 'actualizarAgente', 'eliminarAgente', 'guardarMetas',
-                  'guardarContest', 'eliminarContest'];
+                  'guardarContest', 'eliminarContest',
+                  'subirMultimedia', 'eliminarMultimedia'];
 
 /* =========================================================================
    PUNTOS DE ENTRADA HTTP
@@ -121,6 +143,8 @@ function despachar(accion, p) {
     case 'eliminarContest':  return eliminarContest(p.id);
     case 'validarAdmin':     return esPinValido(p.pinPrueba);
     case 'diagnostico':      return diagnostico();
+    case 'subirMultimedia':  return subirMultimedia(p.archivo);
+    case 'eliminarMultimedia': return eliminarMultimedia(p.fileId);
     default: throw new Error('Acción desconocida: ' + accion);
   }
 }
@@ -257,7 +281,7 @@ function cacheOlvidar(nombre) {
  * backend que version se cree, eso se ve en un segundo en vez de
  * depurarlo a ciegas.
  */
-var VERSION_BACKEND = 4;
+var VERSION_BACKEND = 5;
 
 /**
  * Que version esta desplegada y si el cache funciona de verdad.
@@ -981,6 +1005,88 @@ function eliminarContest(id) {
     }
     throw new Error('El contest ya no existe.');
   });
+}
+
+/* =========================================================================
+   MULTIMEDIA DE LOS CONTESTS
+
+   Las imagenes viven en una carpeta de Drive y en la hoja solo queda su id.
+   Guardarlas dentro de la hoja no era opcion: una celda topa en 50 000
+   caracteres, y ademas el cache de lectura topa en 100 KB por trozo, asi
+   que un par de imagenes lo dejarian inservible.
+
+   La pagina las muestra con el enlace de miniatura de Drive, que si acepta
+   verse dentro de una etiqueta <img>; el enlace normal de "compartir"
+   devuelve una pagina web, no la imagen.
+   ========================================================================= */
+
+/** La carpeta de las imagenes; se crea la primera vez que hace falta. */
+function carpetaMultimedia() {
+  var it = DriveApp.getFoldersByName(CARPETA_MULTIMEDIA);
+  if (it.hasNext()) return it.next();
+  return DriveApp.createFolder(CARPETA_MULTIMEDIA);
+}
+
+/**
+ * Guarda una imagen en Drive y devuelve con que referirse a ella.
+ *
+ * El archivo se comparte "cualquiera con el enlace puede ver" porque los
+ * agentes abren la pagina sin sesion de Google: sin eso verian un hueco.
+ * Se comprueba que el permiso quedara puesto de verdad — algunas cuentas
+ * de Workspace lo bloquean por politica— y si no, se borra el archivo y se
+ * avisa, en vez de dejar colgada una imagen que nadie va a poder abrir.
+ */
+function subirMultimedia(archivo) {
+  if (!archivo || !archivo.datos) throw new Error('No llego ningun archivo.');
+
+  var tipo = String(archivo.tipo || '');
+  if (TIPOS_MULTIMEDIA.indexOf(tipo) < 0) {
+    throw new Error('Solo se aceptan imagenes (PNG, JPG, WEBP o GIF).');
+  }
+
+  var bytes;
+  try {
+    bytes = Utilities.base64Decode(archivo.datos);
+  } catch (e) {
+    throw new Error('El archivo llego dañado. Vuelve a intentarlo.');
+  }
+  if (bytes.length > MAX_BYTES_MULTIMEDIA) {
+    throw new Error('La imagen pesa mas de ' +
+      Math.round(MAX_BYTES_MULTIMEDIA / 1024 / 1024) + ' MB.');
+  }
+
+  var nombre = String(archivo.nombre || 'imagen').slice(0, 120);
+  var blob = Utilities.newBlob(bytes, tipo, nombre);
+  var fichero = carpetaMultimedia().createFile(blob);
+
+  try {
+    fichero.setSharing(DriveApp.Access.ANYONE_WITH_LINK, DriveApp.Permission.VIEW);
+  } catch (e) {
+    fichero.setTrashed(true);
+    throw new Error('Tu cuenta de Google no permite compartir archivos por enlace, ' +
+                    'asi que los agentes no podrian ver la imagen. ' +
+                    'Detalle: ' + String(e));
+  }
+
+  return { id: fichero.getId(), nombre: nombre, tipo: tipo, bytes: bytes.length };
+}
+
+/**
+ * Manda la imagen a la papelera de Drive.
+ *
+ * A la papelera y no borrada del todo: si alguien quita una imagen por
+ * error, se recupera desde Drive durante treinta dias. Un borrado
+ * definitivo no tendria vuelta atras.
+ */
+function eliminarMultimedia(fileId) {
+  if (!fileId) throw new Error('Falta el identificador del archivo.');
+  try {
+    DriveApp.getFileById(String(fileId)).setTrashed(true);
+    return true;
+  } catch (e) {
+    // Que ya no exista no es un fallo: el objetivo era que no estuviera.
+    return true;
+  }
 }
 
 /* =========================================================================

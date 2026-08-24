@@ -11,6 +11,11 @@ const App = {
 
   /* Turno de cada panel que carga datos. Ver `miTurno`. */
   turno: { resumen: 0, reportes: 0 },
+
+  /* Imágenes del contest que se está editando. Viven aquí y no en el DOM
+     porque se suben al elegirlas pero solo se confirman al guardar. */
+  contestMultimedia: [],
+  contestMultimediaBorradas: [],
 };
 
 /**
@@ -2112,6 +2117,13 @@ function iniciarContests() {
   $('#ct_alcanceLinea').addEventListener('change', actualizarVistaPrevia);
   $('#ct_alcanceIds').addEventListener('change', actualizarVistaPrevia);
 
+  // El <input type=file> real va oculto: el nativo no se puede estilar y
+  // desentona con el resto de botones.
+  $('#ct_btnSubir').addEventListener('click', () => $('#ct_archivo').click());
+  $('#ct_archivo').addEventListener('change', e => {
+    if (e.target.files.length) subirImagenesContest([...e.target.files]);
+  });
+
   $('#formContest').addEventListener('submit', guardarContestDesdeForm);
 }
 
@@ -2521,9 +2533,11 @@ function tarjetaContest(c, registros, esAdmin) {
     ].filter(Boolean)),
   ]);
 
+  // Las indicaciones van arriba, antes de los números: es lo que hay que
+  // leer para saber de qué va el contest.
   return el('article', { class: `tarjeta contest contest--${estado}` },
-    [encabezado, meta, resolucion, bloqueGanadores, bloqueEquipo, listaAvance, pie]
-      .filter(Boolean));
+    [encabezado, meta, galeriaContest(c), resolucion, bloqueGanadores,
+     bloqueEquipo, listaAvance, pie].filter(Boolean));
 }
 
 /** Marca el desenlace de un contest terminado, o lo vuelve a abrir. */
@@ -2874,12 +2888,178 @@ function abrirDlgContest(c) {
       ]));
     });
 
+  // Copia, no referencia: cancelar el diálogo tiene que dejar el contest
+  // como estaba, no con las imágenes que se tocaron mientras tanto.
+  App.contestMultimedia = (c && c.multimedia ? c.multimedia : []).slice();
+  App.contestMultimediaBorradas = [];
+  $('#ct_subirEstado').textContent = '';
+  pintarMultimediaDlg();
+
   $('#ct_lineaZona').hidden     = $('#ct_alcanceTipo').value !== 'linea';
   $('#ct_seleccionZona').hidden = $('#ct_alcanceTipo').value !== 'seleccion';
   actualizarVistaPrevia();
 
   $('#dlgContest').showModal();
   $('#ct_nombre').focus();
+}
+
+/* =========================================================================
+   IMÁGENES DE LOS CONTESTS
+   ========================================================================= */
+
+/**
+ * Reduce la imagen antes de subirla.
+ *
+ * Una captura de móvil ronda los 4 MB y tarda una eternidad en viajar por
+ * base64, que además la infla un tercio. A 1600 px de ancho se sigue
+ * leyendo el texto de unas indicaciones y el archivo baja a unos cientos
+ * de KB.
+ *
+ * Los PNG se recomprimen a PNG y no a JPEG: las indicaciones suelen ser
+ * capturas con texto plano, y el JPEG las deja con halos alrededor de las
+ * letras. Lo que ya es pequeño se manda tal cual, sin recomprimir nada.
+ */
+const ANCHO_MAX_SUBIDA = 1600;
+const BYTES_SIN_TOCAR  = 400 * 1024;
+
+function leerArchivoBase64(file) {
+  return new Promise((resolve, reject) => {
+    const fr = new FileReader();
+    fr.onerror = () => reject(new Error('No se pudo leer el archivo.'));
+    fr.onload = () => resolve(String(fr.result).split(',')[1] || '');
+    fr.readAsDataURL(file);
+  });
+}
+
+async function prepararImagen(file) {
+  // Los GIF pueden estar animados: redibujarlos en un canvas se quedaria
+  // con el primer fotograma, asi que se dejan intactos.
+  const intocable = file.type === 'image/gif' || file.size <= BYTES_SIN_TOCAR;
+  if (intocable) {
+    return { nombre: file.name, tipo: file.type, datos: await leerArchivoBase64(file) };
+  }
+
+  const bitmap = await createImageBitmap(file).catch(() => null);
+  if (!bitmap) {
+    // Si el navegador no sabe decodificarla, que decida el servidor.
+    return { nombre: file.name, tipo: file.type, datos: await leerArchivoBase64(file) };
+  }
+
+  const escala = Math.min(1, ANCHO_MAX_SUBIDA / bitmap.width);
+  const ancho  = Math.round(bitmap.width * escala);
+  const alto   = Math.round(bitmap.height * escala);
+
+  const lienzo = document.createElement('canvas');
+  lienzo.width = ancho;
+  lienzo.height = alto;
+  lienzo.getContext('2d').drawImage(bitmap, 0, 0, ancho, alto);
+  bitmap.close();
+
+  const salidaPNG = file.type === 'image/png';
+  const tipo = salidaPNG ? 'image/png' : 'image/jpeg';
+  const url  = lienzo.toDataURL(tipo, salidaPNG ? undefined : 0.85);
+
+  return { nombre: file.name, tipo, datos: url.split(',')[1] || '' };
+}
+
+/** Sube los archivos elegidos y los añade a la galería del diálogo. */
+async function subirImagenesContest(archivos) {
+  const estado = $('#ct_subirEstado');
+  const boton  = $('#ct_btnSubir');
+  boton.disabled = true;
+
+  let subidas = 0;
+  try {
+    for (let i = 0; i < archivos.length; i++) {
+      estado.textContent = `Subiendo ${i + 1} de ${archivos.length}…`;
+      try {
+        const preparada = await prepararImagen(archivos[i]);
+        const ficha = await Store.subirMultimedia(preparada);
+        App.contestMultimedia.push(ficha);
+        subidas++;
+      } catch (err) {
+        aviso(`No se pudo subir "${archivos[i].name}": ${err.message}`, 'error');
+      }
+      pintarMultimediaDlg();
+    }
+    estado.textContent = subidas
+      ? `${subidas} imagen(es) lista(s) · se guardan al guardar el contest`
+      : '';
+  } finally {
+    boton.disabled = false;
+    $('#ct_archivo').value = '';   // permite volver a elegir el mismo archivo
+  }
+}
+
+/** Galería editable dentro del diálogo. */
+function pintarMultimediaDlg() {
+  const cont = $('#ct_multimedia');
+  cont.innerHTML = '';
+
+  App.contestMultimedia.forEach((m, i) => {
+    cont.appendChild(el('figure', { class: 'multimedia-item' }, [
+      el('img', {
+        src: Store.urlMultimedia(m.id, 400), alt: m.nombre || 'Imagen del contest',
+        loading: 'lazy',
+        onclick: () => abrirVisor(m),
+      }),
+      el('button', {
+        class: 'multimedia-quitar', type: 'button', title: 'Quitar esta imagen',
+        text: '✕',
+        onclick: () => quitarImagenContest(i),
+      }),
+    ]));
+  });
+}
+
+/**
+ * Quita una imagen de la lista del contest.
+ *
+ * El archivo de Drive se manda a la papelera solo al GUARDAR el contest,
+ * no aqui: si se borrara ya y luego se cancela el dialogo, la imagen
+ * habria desaparecido de un contest que sigue apuntando a ella.
+ */
+function quitarImagenContest(i) {
+  const [quitada] = App.contestMultimedia.splice(i, 1);
+  if (quitada) App.contestMultimediaBorradas.push(quitada.id);
+  pintarMultimediaDlg();
+}
+
+function abrirVisor(m) {
+  $('#visorImg').src = Store.urlMultimedia(m.id, 1600);
+  $('#visorImg').alt = m.nombre || 'Imagen del contest';
+  $('#visorPie').textContent = m.nombre || '';
+  $('#visorImagen').showModal();
+}
+
+function iniciarVisor() {
+  $('#visorCerrar').addEventListener('click', () => $('#visorImagen').close());
+  // Pulsar el fondo cierra; pulsar la imagen no.
+  $('#visorImagen').addEventListener('click', e => {
+    if (e.target.id === 'visorImagen') $('#visorImagen').close();
+  });
+  // removeAttribute y no src='': la cadena vacia se resuelve contra la URL
+  // de la pagina y dispara una peticion inutil a la propia pagina.
+  $('#visorImagen').addEventListener('close', () => $('#visorImg').removeAttribute('src'));
+}
+
+/** Galería de solo lectura, la que ven los agentes en la tarjeta. */
+function galeriaContest(c) {
+  const imagenes = c.multimedia || [];
+  if (!imagenes.length) return null;
+
+  return el('div', { class: 'contest-galeria' },
+    imagenes.map(m => el('button', {
+      class: 'contest-galeria-item', type: 'button',
+      title: `Ver ${m.nombre || 'la imagen'} en grande`,
+      onclick: () => abrirVisor(m),
+    }, [
+      el('img', {
+        src: Store.urlMultimedia(m.id, 400),
+        alt: m.nombre || 'Indicaciones del contest',
+        loading: 'lazy',
+      }),
+    ])));
 }
 
 async function guardarContestDesdeForm(e) {
@@ -2920,6 +3100,7 @@ async function guardarContestDesdeForm(e) {
     // Editar los datos de un contest no cambia su desenlace
     estatus: App.contestEditando ? (App.contestEditando.estatus || 'auto') : 'auto',
     ganadores: App.contestEditando ? (App.contestEditando.ganadores || []) : [],
+    multimedia: App.contestMultimedia.slice(),
   };
 
   if (!contest.nombre)   return aviso('El nombre del contest es obligatorio.', 'error');
@@ -2940,6 +3121,15 @@ async function guardarContestDesdeForm(e) {
 
   try {
     await Store.guardarContest(contest);
+
+    // Solo ahora se tiran las imágenes quitadas: si se hubieran borrado al
+    // pulsar la ✕ y luego fallara el guardado, el contest habría quedado
+    // apuntando a archivos que ya no existen.
+    for (const id of App.contestMultimediaBorradas) {
+      try { await Store.eliminarMultimedia(id); } catch (err) { /* ya no está */ }
+    }
+    App.contestMultimediaBorradas = [];
+
     $('#dlgContest').close();
     await refrescarContests();
     aviso(contest.id ? 'Contest actualizado.' : 'Contest creado.');
@@ -4158,6 +4348,7 @@ async function iniciar() {
   iniciarMetas();
   iniciarContests();
   iniciarFicha();
+  iniciarVisor();
   iniciarModoJunta();
   iniciarAgentes();
 

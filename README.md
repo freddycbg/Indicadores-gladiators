@@ -286,6 +286,42 @@ al resolver, y se guarda en la columna `ganadores`. Un contest terminado no se
 archiva solo: queda "por resolver" hasta que un administrador diga si se pagó, no
 se cumplió o se canceló.
 
+### Imágenes de los contests
+
+Un contest puede llevar imágenes con las indicaciones. Se suben desde el diálogo
+de edición (solo administrador) y cualquiera las ve en la tarjeta, en miniatura,
+y a pantalla completa al pulsarlas.
+
+**Viven en Drive, no en la hoja.** En la hoja queda solo la referencia
+`{id, nombre, tipo}` en la columna `multimedia`. Meter la imagen dentro de una
+celda no era opción: una celda topa en 50 000 caracteres y además reventaría el
+caché de lectura, que topa en 100 KB por trozo.
+
+Esto obliga a dos cosas que conviene conocer:
+
+- **El script pide permiso de Drive.** `DriveApp` solicita el permiso amplio
+  aunque el script solo cree archivos en su carpeta. Es el precio de que la
+  subida funcione sin salir de la página.
+- **Los archivos se comparten por enlace.** Los agentes abren la página sin
+  sesión de Google; sin ese permiso verían un hueco. `subirMultimedia` comprueba
+  que el permiso quedara puesto y, si la cuenta lo bloquea, borra el archivo y
+  avisa en vez de dejar una imagen que nadie podrá abrir.
+
+La página muestra las imágenes con el enlace de **miniatura** de Drive
+(`/thumbnail?id=…&sz=w400`), no con el de compartir: ese último devuelve una
+página web y dentro de un `<img>` se ve roto. La miniatura además acepta pedir
+el ancho, así que la rejilla no descarga el original para mostrarlo a 300 px.
+
+Antes de subir, la página **reduce la imagen a 1600 px** si hace falta. Medido:
+una captura de 5 944 KB queda en 927 KB, un 84 % menos. Los PNG se recomprimen
+como PNG —el JPEG deja halos alrededor del texto de una captura— y los GIF se
+mandan intactos para no perder la animación.
+
+> Quitar una imagen del diálogo **no** la borra hasta que se guarda el contest.
+> Si se borrara al pulsar la ✕ y luego se cancelara el diálogo, el contest
+> quedaría apuntando a un archivo que ya no existe. Al borrar va a la papelera
+> de Drive, no se destruye: hay treinta días para recuperarla.
+
 > **Nota histórica:** existió un campo `polizas` en el registro diario. Se
 > retiró porque en esta operación una venta es una póliza, así que duplicaba a
 > `pressSale` en la captura y su métrica derivada (ALP por póliza) era la misma
