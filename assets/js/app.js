@@ -2962,6 +2962,25 @@ async function prepararImagen(file) {
   return { nombre: file.name, tipo, datos: url.split(',')[1] || '' };
 }
 
+/**
+ * Traduce el fallo de una subida a algo accionable.
+ *
+ * Un 404 aquí casi siempre significa que el Apps Script todavía no tiene
+ * permiso de Drive: la ejecución muere antes de poder responder, así que
+ * el navegador recibe la página de error de Google en vez del JSON. Sin
+ * esta explicación, el mensaje era "Error de red (404)", que apunta a un
+ * problema de conexión y manda a buscar donde no es.
+ */
+function explicarFalloSubida(err) {
+  const msg = String(err && err.message ? err.message : err);
+  if (/404|<!DOCTYPE|no es valid/i.test(msg)) {
+    return 'el Apps Script aún no tiene permiso para usar Google Drive. ' +
+           'En la hoja: menú Gladiators → "Probar acceso a Drive", acepta el ' +
+           'permiso que pide Google, y vuelve a intentarlo.';
+  }
+  return msg;
+}
+
 /** Sube los archivos elegidos y los añade a la galería del diálogo. */
 async function subirImagenesContest(archivos) {
   const estado = $('#ct_subirEstado');
@@ -2978,7 +2997,7 @@ async function subirImagenesContest(archivos) {
         App.contestMultimedia.push(ficha);
         subidas++;
       } catch (err) {
-        aviso(`No se pudo subir "${archivos[i].name}": ${err.message}`, 'error');
+        aviso(`No se pudo subir "${archivos[i].name}": ${explicarFalloSubida(err)}`, 'error');
       }
       pintarMultimediaDlg();
     }

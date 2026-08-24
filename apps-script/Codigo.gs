@@ -281,7 +281,7 @@ function cacheOlvidar(nombre) {
  * backend que version se cree, eso se ve en un segundo en vez de
  * depurarlo a ciegas.
  */
-var VERSION_BACKEND = 5;
+var VERSION_BACKEND = 6;
 
 /**
  * Que version esta desplegada y si el cache funciona de verdad.
@@ -1028,6 +1028,53 @@ function carpetaMultimedia() {
 }
 
 /**
+ * EJECUTAR A MANO DESDE EL EDITOR, UNA VEZ, TRAS PEGAR ESTE CODIGO.
+ *
+ * Anadir DriveApp introduce un permiso que el script no tenia. Pegar el
+ * codigo y volver a implementar NO lo concede: Google solo pregunta cuando
+ * una funcion se ejecuta desde el editor. Mientras nadie acepte, la
+ * aplicacion web falla al tocar Drive y el navegador recibe un 404 en vez
+ * de un error entendible, porque el fallo ocurre antes de que este codigo
+ * pueda responder nada.
+ *
+ * Esta funcion existe para provocar esa pregunta y, ya puestos, comprobar
+ * el camino entero: crear, compartir y borrar. Si termina sin quejarse, la
+ * subida desde la pagina va a funcionar.
+ */
+function probarDrive() {
+  var informe = [];
+
+  var carpeta = carpetaMultimedia();
+  informe.push('Carpeta lista: "' + carpeta.getName() + '"');
+
+  // Un PNG de 1x1 pixel, transparente.
+  var pixel = 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAAC0lEQVR42mNkYAAAAAYAAjCB0C8AAAAASUVORK5CYII=';
+  var blob = Utilities.newBlob(Utilities.base64Decode(pixel), 'image/png', 'prueba-gladiators.png');
+  var fichero = carpeta.createFile(blob);
+  informe.push('Archivo de prueba creado.');
+
+  try {
+    fichero.setSharing(DriveApp.Access.ANYONE_WITH_LINK, DriveApp.Permission.VIEW);
+    informe.push('Compartir por enlace: OK.');
+  } catch (e) {
+    fichero.setTrashed(true);
+    informe.push('FALLO al compartir por enlace: ' + e);
+    informe.push('Tu cuenta no permite compartir asi, y los agentes no podrian');
+    informe.push('ver las imagenes. Avisame y lo cambiamos por pegar un enlace.');
+    Logger.log(informe.join('\n'));
+    return informe.join('\n');
+  }
+
+  fichero.setTrashed(true);
+  informe.push('Prueba borrada.');
+  informe.push('');
+  informe.push('TODO CORRECTO. Ya puedes subir imagenes desde la pagina.');
+
+  Logger.log(informe.join('\n'));
+  return informe.join('\n');
+}
+
+/**
  * Guarda una imagen en Drive y devuelve con que referirse a ella.
  *
  * El archivo se comparte "cualquiera con el enlace puede ver" porque los
@@ -1183,6 +1230,7 @@ function onOpen() {
     .createMenu('Gladiators')
     .addItem('Sincronizar columnas', 'sincronizarColumnasConAviso')
     .addItem('Instalar hojas', 'instalarConAviso')
+    .addItem('Probar acceso a Drive', 'probarDriveConAviso')
     .addSeparator()
     .addItem('Vaciar caché', 'vaciarCacheConAviso')
     .addToUi();
@@ -1205,6 +1253,10 @@ function sincronizarColumnasConAviso() {
 
 function instalarConAviso() {
   SpreadsheetApp.getUi().alert(instalar());
+}
+
+function probarDriveConAviso() {
+  SpreadsheetApp.getUi().alert(probarDrive());
 }
 
 function vaciarCacheConAviso() {
