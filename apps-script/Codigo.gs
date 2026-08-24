@@ -118,6 +118,7 @@ function despachar(accion, p) {
     case 'guardarContest':   return guardarContest(p.contest);
     case 'eliminarContest':  return eliminarContest(p.id);
     case 'validarAdmin':     return esPinValido(p.pinPrueba);
+    case 'diagnostico':      return diagnostico();
     default: throw new Error('Acción desconocida: ' + accion);
   }
 }
@@ -149,6 +150,189 @@ function encabezados(hj) {
   return hj.getRange(1, 1, 1, ancho).getValues()[0]
            .map(function (h) { return String(h).trim(); })
            .filter(function (h) { return h !== ''; });
+}
+
+/* =========================================================================
+   CACHE DE LECTURA
+
+   Leer la hoja es lo caro de este backend: medido con 306 filas, cada
+   consulta tardaba entre 3 y 8 segundos, y tardaba lo mismo pidiera un dia
+   o el historial completo — porque siempre se lee todo y se filtra despues.
+
+   Aqui se guarda el resultado ya convertido a JSON. Cualquier escritura lo
+   invalida, asi que nunca se sirve algo que ya cambio.
+
+   CacheService topa en 100 KB por clave, y la hoja crece, asi que se parte
+   en trozos con un indice aparte. Si algo falla al guardar o al recomponer
+   se devuelve la lectura directa: el cache es un atajo, nunca un requisito.
+   ========================================================================= */
+
+/*
+ * El plazo es corto a proposito. La aplicacion invalida sola cuando ella
+ * escribe, pero nadie le avisa si alguien edita la hoja A MANO. Para eso
+ * esta onEdit() mas abajo; el plazo es la red por si ese aviso no llega
+ * (una pegada masiva, una edicion desde el movil, un script de terceros).
+ * Cinco minutos basta para que una carga de pagina entera —que dispara
+ * varias consultas seguidas— caiga toda dentro del mismo cache.
+ */
+var CACHE_SEG    = 300;
+
+/*
+ * Tamano de trozo, en CARACTERES. El limite de CacheService son 100 KB por
+ * clave, en BYTES: un texto con acentos —Perez, Ramirez, Lucia— ocupa mas
+ * bytes que caracteres, asi que apurar el limite en caracteres se pasa de
+ * largo y el guardado falla. Con 32 000 caracteres no hay forma de llegar
+ * a 100 KB ni con todo acentuado, y tener mas trozos no cuesta nada:
+ * putAll y getAll los mueven en una sola llamada.
+ */
+var CACHE_TROZO  = 32000;
+
+/* Ultimo fallo al guardar en cache, para que diagnostico() pueda decirlo.
+   Sin esto el cache falla en silencio y parece que solo va lento. */
+var cacheUltimoError = null;
+
+function cacheLeer(clave) {
+  try {
+    var cache = CacheService.getScriptCache();
+    var n = cache.get(clave + ':n');
+    if (!n) return null;
+
+    var nombres = [];
+    for (var i = 0; i < Number(n); i++) nombres.push(clave + ':' + i);
+
+    var trozos = cache.getAll(nombres);
+    var texto = '';
+    for (var j = 0; j < nombres.length; j++) {
+      var t = trozos[nombres[j]];
+      if (t === undefined || t === null) return null;   // expiro un trozo suelto
+      texto += t;
+    }
+    return JSON.parse(texto);
+  } catch (e) {
+    return null;
+  }
+}
+
+function cacheGuardar(clave, valor) {
+  try {
+    var texto = JSON.stringify(valor);
+    var mapa = {};
+    var n = 0;
+    for (var i = 0; i < texto.length; i += CACHE_TROZO) {
+      mapa[clave + ':' + n] = texto.substring(i, i + CACHE_TROZO);
+      n++;
+    }
+    mapa[clave + ':n'] = String(n);
+    CacheService.getScriptCache().putAll(mapa, CACHE_SEG);
+    cacheUltimoError = null;
+    return true;
+  } catch (e) {
+    // Sin cache se sigue funcionando, solo mas lento; pero se anota el
+    // motivo para no tener que adivinar por que no acelera.
+    cacheUltimoError = String(e);
+    return false;
+  }
+}
+
+/** Tira el cache de una hoja. Se llama despues de cada escritura. */
+function cacheOlvidar(nombre) {
+  try {
+    var cache = CacheService.getScriptCache();
+    var n = cache.get('hoja:' + nombre + ':n');
+    var nombres = ['hoja:' + nombre + ':n'];
+    for (var i = 0; i < Number(n || 0); i++) nombres.push('hoja:' + nombre + ':' + i);
+    cache.removeAll(nombres);
+  } catch (e) {}
+}
+
+/*
+ * Version del backend. Subirla en cada cambio que haya que desplegar.
+ *
+ * Existe porque "pegue el codigo y reimplante" y "la implementacion sirve
+ * el codigo nuevo" no son lo mismo: si se crea una implementacion nueva en
+ * vez de editar la que habia, la pagina sigue hablando con la version
+ * vieja y todo parece correcto salvo que nada cambia. Preguntandole al
+ * backend que version se cree, eso se ve en un segundo en vez de
+ * depurarlo a ciegas.
+ */
+var VERSION_BACKEND = 3;
+
+/**
+ * Que version esta desplegada y si el cache funciona de verdad.
+ *
+ * Mide dos lecturas seguidas: la primera puede llenar el cache, la segunda
+ * ya deberia salir de el. Si las dos tardan parecido, el cache no muerde.
+ */
+function diagnostico() {
+  var t0 = new Date().getTime();
+  var n1 = leerTodoCacheado(HOJA_REGISTROS, COL_REGISTROS).length;
+  var t1 = new Date().getTime();
+  var n2 = leerTodoCacheado(HOJA_REGISTROS, COL_REGISTROS).length;
+  var t2 = new Date().getTime();
+
+  var pesoKB = null;
+  try {
+    pesoKB = Math.round(
+      JSON.stringify(aplanarFechas(leerTodo(HOJA_REGISTROS, COL_REGISTROS))).length / 1024);
+  } catch (e) {}
+
+  var enCache = cacheLeer('hoja:' + HOJA_REGISTROS);
+
+  return {
+    version:        VERSION_BACKEND,
+    filas:          n1,
+    igualEn2aLectura: n1 === n2,
+    msPrimera:      t1 - t0,
+    msSegunda:      t2 - t1,
+    cacheEscribio:  enCache !== null,
+    cacheError:     cacheUltimoError,
+    pesoKB:         pesoKB,
+    trozos:         Math.ceil((pesoKB || 0) * 1024 / CACHE_TROZO),
+    zonaHoraria:    libro().getSpreadsheetTimeZone(),
+  };
+}
+
+/** Tira el cache de todas las hojas. */
+function cacheOlvidarTodo() {
+  [HOJA_AGENTES, HOJA_REGISTROS, HOJA_METAS, HOJA_CONTESTS, HOJA_CONFIG]
+    .forEach(cacheOlvidar);
+}
+
+/**
+ * Convierte las fechas a texto ANTES de que las vea nadie.
+ *
+ * Una celda de fecha llega como Date, y aFechaISO() la formatea en la zona
+ * horaria de la hoja. Pero al pasar por el cache el Date se serializa a
+ * texto UTC, y entonces aFechaISO() ya no formatea: corta los diez primeros
+ * caracteres. En una zona por delante de UTC eso devuelve el dia ANTERIOR.
+ *
+ * O sea que la misma fila daria una fecha distinta segun viniera del cache
+ * o de la hoja — el peor tipo de fallo, porque aparece y desaparece solo.
+ *
+ * Se aplica en las dos rutas, no solo antes de guardar, para que cachear no
+ * pueda cambiar el resultado de nada.
+ */
+function aplanarFechas(filas) {
+  var tz = libro().getSpreadsheetTimeZone();
+  for (var i = 0; i < filas.length; i++) {
+    for (var k in filas[i]) {
+      if (filas[i][k] instanceof Date) {
+        filas[i][k] = Utilities.formatDate(filas[i][k], tz, "yyyy-MM-dd'T'HH:mm:ss");
+      }
+    }
+  }
+  return filas;
+}
+
+/** Como leerTodo, pero pasando por el cache. Solo para lecturas. */
+function leerTodoCacheado(nombre, columnasPorDefecto) {
+  var clave = 'hoja:' + nombre;
+  var guardado = cacheLeer(clave);
+  if (guardado) return guardado;
+
+  var filas = aplanarFechas(leerTodo(nombre, columnasPorDefecto));
+  cacheGuardar(clave, filas);
+  return filas;
 }
 
 /** Lee toda la hoja como objetos, mapeando por nombre de encabezado. */
@@ -221,13 +405,25 @@ function exigirPermisoDeCorreccion(fecha, pin) {
                   DIAS_EDICION_LIBRE + ' día(s)). Solo un administrador puede modificarlo.');
 }
 
-/** Bloqueo para que dos agentes que guardan a la vez no se pisen. */
+/**
+ * Bloqueo para que dos agentes que guardan a la vez no se pisen.
+ *
+ * Tira el cache al terminar. Va aqui y no en cada funcion porque TODA
+ * escritura pasa por este envoltorio: puesto en cada una, la proxima que
+ * se escriba se olvidaria de invalidar y serviria datos viejos sin que
+ * nada avisara.
+ *
+ * Se invalida en `finally`: si la escritura fallo a medias, puede haber
+ * dejado algo escrito igualmente, y un cache de mas nunca es mejor que
+ * volver a leer.
+ */
 function conBloqueo(fn) {
   var candado = LockService.getScriptLock();
   candado.waitLock(20000);
   try {
     return fn();
   } finally {
+    cacheOlvidarTodo();
     candado.releaseLock();
   }
 }
@@ -259,7 +455,7 @@ function esPinValido(pin) {
    ========================================================================= */
 
 function listarAgentes() {
-  return leerTodo(HOJA_AGENTES, COL_AGENTES).map(function (a) {
+  return leerTodoCacheado(HOJA_AGENTES, COL_AGENTES).map(function (a) {
     return {
       id:       String(a.id),
       nombre:   String(a.nombre),
@@ -486,7 +682,7 @@ function normalizarRegistro(r) {
 }
 
 function listarRegistros(filtro) {
-  var regs = leerTodo(HOJA_REGISTROS, COL_REGISTROS).map(normalizarRegistro);
+  var regs = leerTodoCacheado(HOJA_REGISTROS, COL_REGISTROS).map(normalizarRegistro);
 
   if (filtro && filtro.desde) {
     regs = regs.filter(function (r) { return r.fecha >= filtro.desde; });
@@ -505,7 +701,7 @@ function listarRegistros(filtro) {
 /** Devuelve el registro de un agente en una fecha, o null. */
 function obtenerRegistro(fecha, agenteId) {
   var f = aFechaISO(fecha);
-  var regs = leerTodo(HOJA_REGISTROS, COL_REGISTROS);
+  var regs = leerTodoCacheado(HOJA_REGISTROS, COL_REGISTROS);
   for (var i = 0; i < regs.length; i++) {
     if (aFechaISO(regs[i].fecha) === f && String(regs[i].agenteId) === String(agenteId)) {
       return normalizarRegistro(regs[i]);
@@ -595,7 +791,7 @@ function normalizarMeta(m) {
 }
 
 function listarMetas(filtro) {
-  var metas = leerTodo(HOJA_METAS, COL_METAS).map(normalizarMeta);
+  var metas = leerTodoCacheado(HOJA_METAS, COL_METAS).map(normalizarMeta);
 
   if (filtro && filtro.semana) {
     metas = metas.filter(function (m) { return m.semana === filtro.semana; });
@@ -685,7 +881,7 @@ function guardarMetas(lista) {
    ========================================================================= */
 
 function listarContests() {
-  return leerTodo(HOJA_CONTESTS, COL_CONTESTS).map(function (c) {
+  return leerTodoCacheado(HOJA_CONTESTS, COL_CONTESTS).map(function (c) {
     var salida = {};
     for (var i = 0; i < COL_CONTESTS.length; i++) {
       var col = COL_CONTESTS[i];
@@ -818,6 +1014,9 @@ function sincronizarColumnas() {
   }
   if (puestos) informe.push('Se asigno el rol "' + ROL_POR_DEFECTO + '" a ' + puestos + ' agente(s) sin rol.');
 
+  // Cambiaron los encabezados: lo guardado se leyo con los de antes.
+  cacheOlvidarTodo();
+
   // Se informa por el registro y no con getUi().alert(): un alert abre una
   // ventana EN LA HOJA, y si la hoja no esta abierta el script se queda
   // esperandola hasta agotar los 6 minutos de ejecucion.
@@ -861,7 +1060,20 @@ function onOpen() {
     .createMenu('Gladiators')
     .addItem('Sincronizar columnas', 'sincronizarColumnasConAviso')
     .addItem('Instalar hojas', 'instalarConAviso')
+    .addSeparator()
+    .addItem('Vaciar caché', 'vaciarCacheConAviso')
     .addToUi();
+}
+
+/**
+ * Editar la hoja a mano tambien tiene que invalidar el cache.
+ *
+ * Es un disparador simple: Google lo llama solo, sin instalar nada. No
+ * mira QUE se edito porque no hace falta afinar: vaciar el cache solo
+ * cuesta la siguiente lectura.
+ */
+function onEdit() {
+  cacheOlvidarTodo();
 }
 
 function sincronizarColumnasConAviso() {
@@ -870,4 +1082,10 @@ function sincronizarColumnasConAviso() {
 
 function instalarConAviso() {
   SpreadsheetApp.getUi().alert(instalar());
+}
+
+function vaciarCacheConAviso() {
+  cacheOlvidarTodo();
+  SpreadsheetApp.getUi().alert(
+    'Caché vaciado. La próxima consulta volverá a leer la hoja.');
 }

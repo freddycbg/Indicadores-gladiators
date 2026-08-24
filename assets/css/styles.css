@@ -793,6 +793,47 @@ input:invalid:not(:placeholder-shown) { border-color: var(--critico); }
 .pastilla-pct--rojo     { background: var(--critico-lav);   color: var(--critico); }
 .pastilla-pct--nulo     { background: transparent;          color: var(--tinta-3); }
 
+/* ---------- Panel esperando datos ---------------------------------------
+   Atenuado y con una barra viva arriba. Lo importante es que se distinga
+   de "no hay nada que mostrar": el contenido sigue visible y en su sitio,
+   solo apagado, asi que no salta al llegar los datos.
+   ------------------------------------------------------------------------- */
+.panel.esta-cargando { position: relative; }
+
+.panel.esta-cargando > * { opacity: .45; transition: opacity .15s; }
+
+.panel.esta-cargando::before {
+  content: '';
+  position: absolute;
+  inset-inline: 0;
+  top: -4px;
+  height: 3px;
+  border-radius: 2px;
+  background: linear-gradient(90deg,
+    transparent 0%, var(--acento) 35%, var(--acento) 65%, transparent 100%);
+  background-size: 40% 100%;
+  background-repeat: no-repeat;
+  animation: barra-carga 1.1s ease-in-out infinite;
+  z-index: 2;
+}
+
+@keyframes barra-carga {
+  0%   { background-position: -45% 0; }
+  100% { background-position: 145% 0; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .panel.esta-cargando::before { animation: none; background-size: 100% 100%; }
+}
+
+/* Carga fallida: el contenido queda como estaba, pero marcado. El detalle
+   lo da el aviso de arriba; esto solo impide que un panel a medias se
+   confunda con uno al dia. */
+.panel.fallo-carga > .tarjeta,
+.panel.fallo-carga > .kpis {
+  border-left: 3px solid var(--critico);
+}
+
 /* Cabeceras que ordenan al pulsarlas */
 .tabla th.ordenable {
   cursor: pointer;

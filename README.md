@@ -257,7 +257,51 @@ se cumplió o se canceló.
 
 ---
 
-## 8. Notas de funcionamiento
+## 8. Velocidad
+
+Leer la hoja es lo caro de este montaje. Medido en producción con 306 filas:
+
+| Consulta | Filas | Tiempo |
+|---|---|---|
+| Un solo día | 14 | 6.2 s |
+| La hoja completa | 306 | 3.9 s |
+
+Pedir un día tarda **más** que pedirlo todo: el backend lee la hoja entera y
+filtra después, así que el rango no ahorra nada y el viaje es todo el costo.
+De ahí las tres decisiones que sostienen el rendimiento:
+
+**El Store pide siempre la hoja completa y recorta en el navegador.** Suena al
+revés, pero el Resumen necesita cuatro rangos distintos: por separado son
+cuatro viajes de segundos, y juntos es uno. Se paga transferir alguna fila de
+más, que sobre estos volúmenes no se nota.
+
+**Se guarda la promesa, no el resultado** (`leerConMemoria` en `store.js`). Dos
+vistas que piden lo mismo a la vez comparten un único viaje. Abrir el Resumen
+lanzaba 13 llamadas, 8 de ellas duplicados literales; ahora son 2. La entrada
+vive 30 s: es para colapsar la ráfaga de una carga, no para servir datos
+viejos. Cualquier escritura la borra entera.
+
+**El Apps Script cachea la hoja leída** (`leerTodoCacheado`). Se parte en trozos
+porque `CacheService` topa en 100 KB por clave. Lo invalida `conBloqueo` —está
+ahí y no en cada función para que ninguna escritura futura se olvide— y también
+`onEdit`, para las ediciones a mano. El plazo de 5 minutos es solo la red por si
+ese aviso no llega. Hay un **Gladiators → Vaciar caché** en el menú de la hoja.
+
+> Las escrituras **nunca** pasan por el caché: usan `leerTodo` directo porque
+> necesitan el número de fila real, y una fila cacheada podría estar desplazada.
+
+### Cargas que se pisaban
+
+Cambiar el periodo mientras la carga anterior seguía en vuelo dejaba dos
+corriendo sobre el mismo estado, y pintaba la que **terminaba** última, que a
+menudo era la vieja: se elegía "Semana pasada" y aparecían los datos de "Hoy"
+con las gráficas en blanco. Cada carga toma ahora un turno (`miTurno`) y se
+retira sin pintar si ya no es el suyo. Mientras espera, el panel se atenúa y
+muestra una barra — una carga lenta y una pantalla vacía ya no se ven igual.
+
+---
+
+## 9. Notas de funcionamiento
 
 - **Un registro por agente y por día.** Si un agente vuelve a guardar la misma
   fecha, el registro anterior se reemplaza en lugar de duplicarse.
