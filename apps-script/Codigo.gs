@@ -1,4 +1,4 @@
-/**
+﻿/**
  * =========================================================================
  * Codigo.gs — Backend en Google Apps Script
  * Seguimiento Diario · Gladiator's Team
@@ -54,13 +54,15 @@ function rangoDeRol(rol) {
 var COL_REGISTROS = [
   'id', 'fecha', 'agenteId', 'agenteNombre',
   'app', 'press', 'pressSale', 'pressNoSale', 'callerCalls',
-  'noShow', 'noCalifica', 'reschedule', 'referidos', 'alp',
+  'noShow', 'noCalifica', 'reschedule', 'citaCedida', 'referidos', 'alp',
+  'sinActividad', 'motivoSinActividad',
   'creado', 'actualizado'
 ];
 
 /* Métricas numéricas. Debe coincidir con CAMPOS en assets/js/config.js. */
 var METRICAS = ['app', 'press', 'pressSale', 'pressNoSale', 'callerCalls',
-                'noShow', 'noCalifica', 'reschedule', 'referidos', 'alp'];
+                'noShow', 'noCalifica', 'reschedule', 'citaCedida',
+                'referidos', 'alp'];
 
 /**
  * Días hacia atrás en que un agente puede corregir su propio reporte sin PIN.
@@ -255,7 +257,7 @@ function cacheOlvidar(nombre) {
  * backend que version se cree, eso se ve en un segundo en vez de
  * depurarlo a ciegas.
  */
-var VERSION_BACKEND = 3;
+var VERSION_BACKEND = 4;
 
 /**
  * Que version esta desplegada y si el cache funciona de verdad.
@@ -678,6 +680,14 @@ function normalizarRegistro(r) {
   for (var i = 0; i < METRICAS.length; i++) {
     salida[METRICAS[i]] = Number(r[METRICAS[i]]) || 0;
   }
+
+  // Dia declarado sin actividad. Las filas anteriores a esta columna la
+  // traen vacia, que se lee como "si hubo actividad" — que es lo correcto:
+  // antes no existia la opcion de decir lo contrario.
+  salida.sinActividad = esVerdadero(r.sinActividad);
+  salida.motivoSinActividad = salida.sinActividad
+    ? String(r.motivoSinActividad || '') : '';
+
   return salida;
 }
 
@@ -743,8 +753,15 @@ function guardarRegistro(registro, pin) {
     fila.creado       = previo ? previo.creado : ahora();
     fila.actualizado  = ahora();
 
+    // Un dia sin actividad guarda ceros a proposito: la marca es lo que
+    // distingue esos ceros de un dia trabajado sin resultados.
+    var sinActividad = registro.sinActividad === true;
+    fila.sinActividad = sinActividad;
+    fila.motivoSinActividad = sinActividad
+      ? String(registro.motivoSinActividad || '') : '';
+
     for (var m = 0; m < METRICAS.length; m++) {
-      fila[METRICAS[m]] = Number(registro[METRICAS[m]]) || 0;
+      fila[METRICAS[m]] = sinActividad ? 0 : (Number(registro[METRICAS[m]]) || 0);
     }
 
     if (previo) {

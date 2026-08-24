@@ -128,7 +128,7 @@ const Store = (() => {
      nuevos, jerarquia distinta). Sin esto, un navegador que ya tenia la
      semilla vieja nunca recibia la nueva y quedaba con datos incoherentes
      respecto del codigo. Solo afecta al modo demo. */
-  const SEMILLA_VERSION = '11-sin-polizas';
+  const SEMILLA_VERSION = '13-sin-actividad-y-cita-cedida';
 
   function leerLS(clave, porDefecto) {
     try {
@@ -219,6 +219,25 @@ const Store = (() => {
         const esLider = ag.rol !== 'Agente';
         if (rnd() < (esLider ? 0.35 : 0.12)) continue;   // ausencias ocasionales
 
+        // Dias declarados sin actividad: poco frecuentes pero repartidos,
+        // para poder ver como se comportan la constancia y las tablas.
+        if (rnd() < 0.05) {
+          registros.push({
+            id: nuevoId(),
+            fecha,
+            agenteId: ag.id,
+            agenteNombre: ag.nombre,
+            sinActividad: true,
+            motivoSinActividad:
+              MOTIVOS_SIN_ACTIVIDAD[entre(0, MOTIVOS_SIN_ACTIVIDAD.length - 1)].key,
+            app: 0, press: 0, pressSale: 0, pressNoSale: 0, callerCalls: 0,
+            noShow: 0, noCalifica: 0, reschedule: 0, citaCedida: 0,
+            referidos: 0, alp: 0,
+            creado: fecha,
+          });
+          continue;
+        }
+
         const app       = esLider ? entre(1, 4) : entre(2, 9);
         const press     = Math.max(0, app - entre(0, 3));
         const pressSale = Math.max(0, press - entre(0, press));
@@ -235,6 +254,7 @@ const Store = (() => {
           noShow:      entre(0, 3),
           noCalifica:  entre(0, 2),
           reschedule:  entre(0, 2),
+          citaCedida:  rnd() < 0.25 ? entre(1, 2) : 0,
           referidos:   entre(0, 6),
           alp:         pressSale * entre(400, 1800) + entre(0, 250),
           creado: fecha,

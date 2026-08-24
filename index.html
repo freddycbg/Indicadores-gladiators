@@ -1,4 +1,4 @@
-<!DOCTYPE html>
+﻿<!DOCTYPE html>
 <html lang="es">
 <head>
 <meta charset="utf-8">
@@ -9,7 +9,7 @@
      evita algo peor: que el navegador estrene este HTML y siga usando el
      JavaScript viejo que ya tenia guardado. Sin el, esa mezcla de mitades
      rompe la pagina de formas raras; con el, o esta todo viejo o todo nuevo. -->
-<link rel="stylesheet" href="assets/css/styles.css?v=2">
+<link rel="stylesheet" href="assets/css/styles.css?v=3">
 <link rel="icon" type="image/png" href="assets/img/favicon.png">
 <meta name="theme-color" content="#0A1730">
 </head>
@@ -86,6 +86,22 @@
         </div>
 
         <hr class="separador">
+
+        <!-- Día sin actividad: apaga las métricas y pide un motivo -->
+        <div class="bloque-sin-actividad">
+          <label class="check-linea" for="f_sinActividad">
+            <input type="checkbox" id="f_sinActividad" name="sinActividad">
+            <span>
+              <strong>Sin actividad este día</strong>
+              <small>No trabajé: no hubo citas, presentaciones ni llamadas.</small>
+            </span>
+          </label>
+
+          <div class="campo campo-motivo" id="campoMotivo" hidden>
+            <label for="f_motivo">Motivo <span class="req">*</span></label>
+            <select id="f_motivo" name="motivoSinActividad"></select>
+          </div>
+        </div>
 
         <!-- Los campos de métricas se generan desde CAMPOS en config.js -->
         <div class="rejilla-form" id="rejillaMetricas"></div>
@@ -639,10 +655,10 @@
   <span id="pieModo"></span>
 </footer>
 
-<script src="assets/js/config.js?v=2"></script>
-<script src="assets/js/util.js?v=2"></script>
-<script src="assets/js/store.js?v=2"></script>
-<script src="assets/js/charts.js?v=2"></script>
-<script src="assets/js/app.js?v=2"></script>
+<script src="assets/js/config.js?v=3"></script>
+<script src="assets/js/util.js?v=3"></script>
+<script src="assets/js/store.js?v=3"></script>
+<script src="assets/js/charts.js?v=3"></script>
+<script src="assets/js/app.js?v=3"></script>
 </body>
 </html>

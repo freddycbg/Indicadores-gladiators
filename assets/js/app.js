@@ -158,14 +158,49 @@ function llenarSelectAgentes(select, { soloActivos = true, incluirTodos = false 
   if ([...select.options].some(o => o.value === valorPrevio)) select.value = valorPrevio;
 }
 
+/* Motivos del día sin actividad. Nace sin elegir para que sea una decisión
+   consciente y no el primero de la lista por descuido. */
+function construirSelectMotivo() {
+  const sel = $('#f_motivo');
+  sel.innerHTML = '';
+  sel.appendChild(el('option', { value: '', text: 'Elige un motivo…' }));
+  MOTIVOS_SIN_ACTIVIDAD.forEach(m => {
+    sel.appendChild(el('option', { value: m.key, text: m.label }));
+  });
+}
+
+/**
+ * Apaga o enciende los campos de métricas según la casilla.
+ *
+ * Se vacían y se deshabilitan en vez de solo ignorarlos al guardar: un
+ * campo apagado que aún muestra un número invita a pensar que ese número
+ * se guardó.
+ */
+function aplicarSinActividad() {
+  const activo = $('#f_sinActividad').checked;
+
+  $('#campoMotivo').hidden = !activo;
+  $('#rejillaMetricas').classList.toggle('rejilla-form--apagada', activo);
+
+  CAMPOS.forEach(c => {
+    const input = $('#f_' + c.key);
+    input.disabled = activo;
+    if (activo) input.value = '';
+  });
+
+  if (!activo) $('#f_motivo').value = '';
+}
+
 function iniciarFormRegistro() {
   construirCamposMetricas();
+  construirSelectMotivo();
   $('#f_fecha').value = hoyISO();
   $('#f_fecha').max = hoyISO();
 
   // Al cambiar fecha o agente se revisa si ese día ya fue reportado.
   $('#f_fecha').addEventListener('change', buscarRegistroExistente);
   $('#f_agente').addEventListener('change', buscarRegistroExistente);
+  $('#f_sinActividad').addEventListener('change', aplicarSinActividad);
 
   $('#formRegistro').addEventListener('submit', async e => {
     e.preventDefault();
@@ -178,13 +213,29 @@ function iniciarFormRegistro() {
     if (!agenteId) return aviso('Selecciona el agente.', 'error');
     if (!puedeModificar(fecha)) return aviso(mensajeCerrado(fecha), 'error');
 
+    const sinActividad = $('#f_sinActividad').checked;
+    const motivo       = $('#f_motivo').value;
+
+    if (sinActividad && !motivo) {
+      return aviso('Elige el motivo del día sin actividad.', 'error');
+    }
+
     const agente = App.agentes.find(a => a.id === agenteId);
-    const reg = { fecha, agenteId, agenteNombre: agente ? agente.nombre : '' };
+    const reg = {
+      fecha, agenteId,
+      agenteNombre: agente ? agente.nombre : '',
+      sinActividad,
+      motivoSinActividad: sinActividad ? motivo : '',
+    };
 
     // Campo vacío = 0. Es la única conversión implícita del formulario.
+    // Un día sin actividad guarda ceros a propósito: la marca es lo que
+    // distingue esos ceros de un día trabajado sin resultados.
     for (const c of CAMPOS) {
       const raw = $('#f_' + c.key).value.trim();
-      reg[c.key] = raw === '' ? 0 : (c.tipo === 'moneda' ? nDecimal(raw) : nEntero(raw));
+      reg[c.key] = sinActividad || raw === ''
+        ? 0
+        : (c.tipo === 'moneda' ? nDecimal(raw) : nEntero(raw));
     }
 
     btn.disabled = true;
@@ -192,7 +243,9 @@ function iniciarFormRegistro() {
       const { reemplazado } = await Store.guardarRegistro(reg);
       aviso(reemplazado
         ? `Registro de ${reg.agenteNombre} del ${fechaCorta(fecha)} corregido.`
-        : `Registro de ${reg.agenteNombre} guardado.`);
+        : sinActividad
+          ? `Día sin actividad de ${reg.agenteNombre} registrado (${etiquetaMotivo(motivo)}).`
+          : `Registro de ${reg.agenteNombre} guardado.`);
       limpiarFormulario({ conservarFecha: true });
       await pintarRecientes();
     } catch (err) {
@@ -246,6 +299,10 @@ function modoEdicion(registro) {
   }
 
   // Rellenar con lo ya reportado para que se corrija sobre eso.
+  $('#f_sinActividad').checked = registro.sinActividad === true;
+  $('#f_motivo').value = registro.motivoSinActividad || '';
+  aplicarSinActividad();
+
   CAMPOS.forEach(c => {
     const v = Number(registro[c.key]) || 0;
     $('#f_' + c.key).value = v === 0 ? '' : v;
@@ -254,10 +311,14 @@ function modoEdicion(registro) {
   const abierto = puedeModificar(registro.fecha);
   nota.hidden = false;
   nota.classList.toggle('nota--bloqueada', !abierto);
-  $('#notaEdicionTexto').textContent = abierto
-    ? `Ya existe un reporte de ${registro.agenteNombre} para el ${fechaCorta(registro.fecha)}. ` +
-      `Estás corrigiéndolo: al guardar se reemplazan los valores anteriores.`
-    : mensajeCerrado(registro.fecha);
+  $('#notaEdicionTexto').textContent = !abierto
+    ? mensajeCerrado(registro.fecha)
+    : registro.sinActividad
+      ? `${registro.agenteNombre} ya reportó el ${fechaCorta(registro.fecha)} como día sin ` +
+        `actividad (${etiquetaMotivo(registro.motivoSinActividad)}). Desmarca la casilla si ` +
+        `sí trabajó y quieres capturar sus números.`
+      : `Ya existe un reporte de ${registro.agenteNombre} para el ${fechaCorta(registro.fecha)}. ` +
+        `Estás corrigiéndolo: al guardar se reemplazan los valores anteriores.`;
 
   btnBorrar.hidden    = !abierto;
   btnGuardar.disabled = !abierto;
@@ -267,6 +328,8 @@ function modoEdicion(registro) {
 function limpiarFormulario({ conservarFecha = false } = {}) {
   CAMPOS.forEach(c => { $('#f_' + c.key).value = ''; });
   $('#f_agente').value = '';
+  $('#f_sinActividad').checked = false;
+  aplicarSinActividad();
   if (!conservarFecha) $('#f_fecha').value = hoyISO();
   modoEdicion(null);
 }
@@ -336,13 +399,10 @@ async function pintarRecientes() {
   ]));
 
   tabla.appendChild(el('tbody', {}, regs.map(r =>
-    el('tr', {}, [
+    el('tr', { class: esSinActividad(r) ? 'fila-sin-actividad' : '' }, [
       el('td', { text: fechaCorta(r.fecha) }),
       el('td', { text: r.agenteNombre }),
-      ...CAMPOS.map(c => el('td', {
-        class: 'num' + (Number(r[c.key]) ? '' : ' cero'),
-        text: fmt(r[c.key], c.tipo),
-      })),
+      ...celdasMetricas(r),
       el('td', { class: 'acc' }, celdaAcciones(r)),
     ])
   )));
@@ -544,10 +604,23 @@ function restaurarLineaVista(select) {
 /** Suma una métrica sobre un conjunto de registros. */
 const suma = (regs, key) => regs.reduce((t, r) => t + (Number(r[key]) || 0), 0);
 
+/**
+ * Un día declarado sin actividad no es una jornada.
+ *
+ * Sus métricas son cero, así que las sumas no cambian; lo que cambia es
+ * todo lo que CUENTA días o personas. Si el día libre entrara en esos
+ * conteos, los promedios "por día" bajarían por jornadas que nadie
+ * esperaba trabajar. Por eso se filtra antes de contar, nunca antes de
+ * sumar, y se conserva entero en las tablas de detalle, que es donde el
+ * dato tiene que verse.
+ */
+const esSinActividad = r => r.sinActividad === true;
+const soloActivos    = regs => regs.filter(r => !esSinActividad(r));
+
 function pintarKPIs() {
   const cont = $('#kpis');
   cont.innerHTML = '';
-  const regs = App.registrosStats;
+  const regs = soloActivos(App.registrosStats);
   const dias = new Set(regs.map(r => r.fecha)).size || 1;
 
   cont.appendChild(kpiAgentes(regs));
@@ -601,7 +674,7 @@ function kpiAgentes(regs) {
 }
 
 function pintarGraficas() {
-  const regs = App.registrosStats;
+  const regs = soloActivos(App.registrosStats);
 
   /* --- Tendencia diaria: 3 series sobre las fechas del rango ------------- */
   const fechas = [...new Set(regs.map(r => r.fecha))].sort();
@@ -641,20 +714,44 @@ function pintarGraficas() {
   });
 }
 
-/** Consolida los registros por agente sumando todas las métricas. */
+/**
+ * Consolida los registros por agente sumando todas las métricas.
+ *
+ * `dias` cuenta solo jornadas trabajadas; los días declarados sin actividad
+ * van aparte en `libres` para poder descontarlos de lo esperado.
+ */
 function agruparPorAgente(regs) {
   const mapa = new Map();
   for (const r of regs) {
     if (!mapa.has(r.agenteId)) {
-      const base = { agenteId: r.agenteId, nombre: r.agenteNombre, dias: new Set() };
+      const base = {
+        agenteId: r.agenteId, nombre: r.agenteNombre,
+        dias: new Set(), libres: new Set(), motivos: new Map(),
+      };
       CAMPOS.forEach(c => { base[c.key] = 0; });
       mapa.set(r.agenteId, base);
     }
     const a = mapa.get(r.agenteId);
+
+    if (esSinActividad(r)) {
+      a.libres.add(r.fecha);
+      const m = r.motivoSinActividad || '';
+      a.motivos.set(m, (a.motivos.get(m) || 0) + 1);
+      continue;
+    }
+
     a.dias.add(r.fecha);
     CAMPOS.forEach(c => { a[c.key] += Number(r[c.key]) || 0; });
   }
-  return [...mapa.values()].map(a => ({ ...a, dias: a.dias.size }));
+  return [...mapa.values()].map(a => ({
+    ...a,
+    dias: a.dias.size,
+    libres: a.libres.size,
+    motivos: [...a.motivos.entries()]
+      .sort((x, y) => y[1] - x[1])
+      .map(([k, n]) => `${etiquetaMotivo(k)} ×${n}`)
+      .join(', '),
+  }));
 }
 
 /* --- Tasas de conversión: son razones, no series — van en tabla -------- */
@@ -747,15 +844,18 @@ function pintarReporte() {
     return;
   }
 
-  // Denominador de la constancia: jornadas esperadas en el rango elegido.
-  const habiles = diasHabilesDelRango($('#rp_desde').value, $('#rp_hasta').value);
+  // Denominador de la constancia: jornadas esperadas en el rango elegido,
+  // menos los días que cada quien declaró sin actividad.
+  const habiles   = diasHabilesDelRango($('#rp_desde').value, $('#rp_hasta').value);
+  const esperados = f => Math.max(0, habiles - f.libres);
 
   // Valor por el que se ordena cada columna. El ratio sin presentaciones
   // se manda al final: "sin dato" no es lo mismo que "el peor".
   const valorDe = {
     nombre:      f => f.nombre.toLowerCase(),
     dias:        f => f.dias,
-    constancia:  f => (habiles ? f.dias / habiles : 0),
+    libres:      f => f.libres,
+    constancia:  f => (esperados(f) ? f.dias / esperados(f) : -1),
     refPress:    f => (f.press ? f.referidos / f.press : -1),
   };
   CAMPOS.forEach(c => { valorDe[c.key] = f => f[c.key]; });
@@ -786,9 +886,12 @@ function pintarReporte() {
   tabla.appendChild(el('thead', {}, [
     el('tr', {}, [
       th('nombre', 'Agente'),
-      th('dias', 'Días', { class: 'num' }),
+      th('dias', 'Días', { class: 'num', title: 'Días trabajados con reporte' }),
+      th('libres', 'Sin act.', { class: 'num',
+        title: 'Días declarados sin actividad. Se descuentan de las jornadas esperadas' }),
       th('constancia', 'Constancia', { class: 'num',
-        title: `Días con reporte ÷ ${habiles} día(s) hábil(es) del período` }),
+        title: `Días trabajados ÷ ${habiles} día(s) hábil(es) del período, ` +
+               `menos los días sin actividad de cada quien` }),
       th('refPress', 'REF/PRESS', { class: 'num',
         title: 'Referidos por presentación · ' +
                `verde ≥ ${RATIO_REF_PRESS.verde}, amarillo ≥ ${RATIO_REF_PRESS.amarillo}` }),
@@ -797,10 +900,11 @@ function pintarReporte() {
   ]));
 
   tabla.appendChild(el('tbody', {}, filas.map(f =>
-    el('tr', {}, [
+    el('tr', { class: f.dias === 0 && f.libres ? 'fila-sin-actividad' : '' }, [
       el('td', {}, [enlaceAgente(f.agenteId, f.nombre)]),
       el('td', { class: 'num', text: f.dias }),
-      celdaConstancia(f.dias, habiles),
+      celdaLibres(f),
+      celdaConstancia(f.dias, esperados(f)),
       el('td', { class: 'num' }, [pastillaRefPress(f.referidos, f.press)]),
       ...CAMPOS.map(c => el('td', {
         class: 'num' + (f[c.key] ? '' : ' cero'),
@@ -811,14 +915,20 @@ function pintarReporte() {
 
   // El total de días es cuántas fechas distintas tuvieron actividad, no la
   // suma de las filas: varias personas comparten la misma fecha.
-  const diasConActividad = new Set(App.registrosReportes.map(r => r.fecha)).size;
-  const totalRef   = filas.reduce((t, f) => t + f.referidos, 0);
-  const totalPress = filas.reduce((t, f) => t + f.press, 0);
+  const diasConActividad = new Set(soloActivos(App.registrosReportes).map(r => r.fecha)).size;
+  const totalLibres = filas.reduce((t, f) => t + f.libres, 0);
+  const totalRef    = filas.reduce((t, f) => t + f.referidos, 0);
+  const totalPress  = filas.reduce((t, f) => t + f.press, 0);
 
   tabla.appendChild(el('tfoot', {}, [
     el('tr', {}, [
       el('td', { text: 'TOTAL' }),
       el('td', { class: 'num', text: diasConActividad }),
+      el('td', { class: 'num' + (totalLibres ? '' : ' cero'),
+        title: 'Suma de días sin actividad de todo el equipo en el período',
+        text: totalLibres }),
+      // El equipo entero no libra: aquí el denominador son los días hábiles
+      // completos, aunque a alguien le falte alguno.
       celdaConstancia(diasConActividad, habiles, 'El equipo tuvo actividad en estos días del período'),
       el('td', { class: 'num' }, [pastillaRefPress(totalRef, totalPress)]),
       ...CAMPOS.map(c => el('td', {
@@ -839,19 +949,38 @@ function ordenarReportePor(campo) {
   pintarReporte();
 }
 
-/** Celda de constancia con su semáforo. Sin días hábiles no hay ratio. */
-function celdaConstancia(dias, habiles, titulo) {
-  if (!habiles) {
-    return el('td', { class: 'num cero', text: '—' });
+/** Días declarados sin actividad, con el desglose de motivos al pasar el cursor. */
+function celdaLibres(f) {
+  if (!f.libres) return el('td', { class: 'num cero', text: '0' });
+  return el('td', { class: 'num' }, [
+    el('span', {
+      class: 'pastilla-libre',
+      title: `${f.libres} día(s) sin actividad · ${f.motivos}`,
+      text: f.libres,
+    }),
+  ]);
+}
+
+/**
+ * Celda de constancia con su semáforo.
+ *
+ * `esperados` ya viene con los días sin actividad descontados. Si no queda
+ * ninguno —alguien que declaró libre todo el período— no hay ratio que
+ * calcular: no es 0% ni 100%, es que no había jornadas que cumplir.
+ */
+function celdaConstancia(dias, esperados, titulo) {
+  if (!esperados) {
+    return el('td', { class: 'num cero',
+      title: titulo || 'Sin jornadas esperadas en el período', text: '—' });
   }
-  const pct = (dias / habiles) * 100;
+  const pct = (dias / esperados) * 100;
   const color = pct >= CONSTANCIA.verde ? 'verde'
               : pct >= CONSTANCIA.amarillo ? 'amarillo' : 'rojo';
 
   return el('td', { class: 'num' }, [
     el('span', {
       class: `pastilla-pct pastilla-pct--${color}`,
-      title: titulo || `${dias} de ${habiles} día(s) hábil(es)`,
+      title: titulo || `${dias} de ${esperados} jornada(s) esperada(s)`,
       text: `${pct.toFixed(0)}%`,
     }),
   ]);
@@ -880,26 +1009,47 @@ function pintarDetalle() {
   ]));
 
   tabla.appendChild(el('tbody', {}, regs.map(r =>
-    el('tr', {}, [
+    el('tr', { class: esSinActividad(r) ? 'fila-sin-actividad' : '' }, [
       el('td', { text: fechaCorta(r.fecha) }),
       el('td', {}, [enlaceAgente(r.agenteId, r.agenteNombre)]),
-      ...CAMPOS.map(c => el('td', {
-        class: 'num' + (Number(r[c.key]) ? '' : ' cero'),
-        text: fmt(r[c.key], c.tipo),
-      })),
+      ...celdasMetricas(r),
       el('td', { class: 'acc no-imprimir' }, celdaAcciones(r)),
     ])
   )));
+}
+
+/**
+ * Las celdas de métricas de un registro.
+ *
+ * Un día sin actividad no imprime diez ceros: una fila de ceros se lee
+ * como "trabajó y no logró nada", que es justo lo contrario de lo que
+ * pasó. En su lugar ocupa el ancho entero con el motivo.
+ */
+function celdasMetricas(r) {
+  if (esSinActividad(r)) {
+    return [el('td', { class: 'celda-sin-actividad', colspan: CAMPOS.length }, [
+      el('span', { class: 'marca-sin-actividad', text: 'Sin actividad' }),
+      el('span', { class: 'motivo-sin-actividad',
+                   text: etiquetaMotivo(r.motivoSinActividad) }),
+    ])];
+  }
+  return CAMPOS.map(c => el('td', {
+    class: 'num' + (Number(r[c.key]) ? '' : ' cero'),
+    text: fmt(r[c.key], c.tipo),
+  }));
 }
 
 function exportarCSV() {
   const regs = App.registrosReportes;
   if (!regs.length) return aviso('No hay datos para exportar.', 'error');
 
-  const cab = ['Fecha', 'Agente', ...CAMPOS.map(c => c.corto)];
+  // La columna del motivo va antes que las métricas: quien abra el CSV
+  // tiene que ver por qué esa fila es de ceros antes de leer los ceros.
+  const cab = ['Fecha', 'Agente', 'Sin actividad', ...CAMPOS.map(c => c.corto)];
   const cuerpo = regs.map(r => [
     r.fecha,
     r.agenteNombre,
+    esSinActividad(r) ? etiquetaMotivo(r.motivoSinActividad) : '',
     ...CAMPOS.map(c => Number(r[c.key]) || 0),
   ]);
 
@@ -942,7 +1092,7 @@ function exportarCSV() {
  */
 function seEsperaReporteDe(lineaId, registrosDelPeriodo) {
   const alcance = alcanceDe(lineaId);
-  const producen = new Set(registrosDelPeriodo.map(r => r.agenteId));
+  const producen = new Set(soloActivos(registrosDelPeriodo).map(r => r.agenteId));
 
   return App.agentes
     .filter(a => a.activo !== false)
@@ -1291,7 +1441,7 @@ async function refrescarComparativa(lineaId) {
   const persona = App.agentes.find(a => a.id === lineaId);
   const enAlcance = App.agentes.filter(
     a => (!alcance || alcance.has(a.id)) && a.rol === 'Agente' && a.activo !== false).length;
-  const reportaron = new Set(filtrar(regsAhora).map(r => r.agenteId)).size;
+  const reportaron = new Set(soloActivos(filtrar(regsAhora)).map(r => r.agenteId)).size;
 
   $('#comparativaAlcance').textContent = persona && persona.rol === 'Agente'
     ? `Datos individuales de ${persona.nombre}.`
@@ -3000,7 +3150,9 @@ function seccionLeaderboard(registros, rango, previo, alcance, etiquetaPeriodo) 
  * siempre al fondo sin que eso signifique nada.
  */
 function agentesEnAtencion(registros, rango, alcance, limite = 5) {
-  const dentro = registros.filter(r =>
+  // Quien declaró el período sin actividad no compite: aparecería al fondo
+  // de la lista por haber librado, que no es un problema de desempeño.
+  const dentro = soloActivos(registros).filter(r =>
     r.fecha >= rango.desde && r.fecha <= rango.hasta &&
     (!alcance || alcance.has(r.agenteId)));
 
@@ -3218,7 +3370,7 @@ function claseCifra(texto) {
  * todos tengan el mismo punto de partida antes de entrar en ratios.
  */
 function seccionResumenJunta(registros, rango, alcance, etiquetaPeriodo) {
-  const dentro = registros.filter(r =>
+  const dentro = soloActivos(registros).filter(r =>
     r.fecha >= rango.desde && r.fecha <= rango.hasta &&
     (!alcance || alcance.has(r.agenteId)));
 
@@ -3391,21 +3543,27 @@ async function pintarFicha(agente) {
     (agente.activo === false ? ' · INACTIVO' : '') +
     ` · ${textoRango(rango.desde, rango.hasta)}`;
 
-  const totales = totalesDe(registros);
+  // Las jornadas trabajadas alimentan cifras y ratios; la lista completa,
+  // con los días libres, solo la tabla de abajo.
+  const trabajados = soloActivos(registros);
+  const totales    = totalesDe(trabajados);
 
-  pintarFichaKpis(totales, registros, rango, agente);
+  pintarFichaKpis(totales, trabajados, rango, agente, registros.length - trabajados.length);
   pintarFichaRatios(totales, rango);
-  pintarFichaEvolucion(registros, rango);
+  pintarFichaEvolucion(trabajados, rango);
   await pintarFichaMeta(agente);
   await pintarFichaContests(agente);
   pintarFichaRegistros(registros);
 }
 
-function pintarFichaKpis(totales, registros, rango, agente) {
+function pintarFichaKpis(totales, registros, rango, agente, diasLibres = 0) {
   const cont = $('#fichaKpis');
   cont.innerHTML = '';
 
-  const habiles = diasHabilesDelRango(rango.desde, rango.hasta);
+  // Los días que declaró sin actividad salen del denominador: no eran
+  // jornadas que se esperaba que trabajara.
+  const habiles   = diasHabilesDelRango(rango.desde, rango.hasta);
+  const esperados = Math.max(0, habiles - diasLibres);
   const diasConReporte = new Set(registros.map(r => r.fecha)).size;
   const ultimo = registros.reduce((m, r) => (r.fecha > m ? r.fecha : m), '');
   const sinReportar = ultimo ? diasDesde(ultimo) : null;
@@ -3416,7 +3574,7 @@ function pintarFichaKpis(totales, registros, rango, agente) {
     el('div', { class: 'kpi-sub', text: sub }),
   ]);
 
-  const pct = habiles ? (diasConReporte / habiles) * 100 : null;
+  const pct = esperados ? (diasConReporte / esperados) * 100 : null;
   const color = pct === null ? 'sin'
     : pct >= CONSTANCIA.verde ? 'verde'
     : pct >= CONSTANCIA.amarillo ? 'amarillo' : 'rojo';
@@ -3424,7 +3582,9 @@ function pintarFichaKpis(totales, registros, rango, agente) {
   cont.appendChild(el('div', { class: `kpi kpi--${color}` }, [
     el('div', { class: 'kpi-etq', text: 'Constancia' }),
     el('div', { class: 'kpi-val', text: pct === null ? '—' : pct.toFixed(0) + '%' }),
-    el('div', { class: 'kpi-sub', text: `${diasConReporte} de ${habiles} día(s) hábil(es)` }),
+    el('div', { class: 'kpi-sub',
+      text: `${diasConReporte} de ${esperados} jornada(s)` +
+            (diasLibres ? ` · ${diasLibres} día(s) sin actividad` : '') }),
   ]));
 
   cont.appendChild(tarjeta('Sin reportar',
@@ -3602,7 +3762,10 @@ async function pintarFichaContests(agente) {
 function pintarFichaRegistros(registros) {
   const tabla = $('#fichaTabla');
   tabla.innerHTML = '';
-  $('#fichaRegistrosSub').textContent = `${registros.length} registro(s) en el período.`;
+  const libres = registros.filter(esSinActividad).length;
+  $('#fichaRegistrosSub').textContent =
+    `${registros.length} registro(s) en el período` +
+    (libres ? `, de los cuales ${libres} son días sin actividad.` : '.');
 
   if (!registros.length) {
     tabla.appendChild(el('tbody', {}, [
@@ -3619,12 +3782,9 @@ function pintarFichaRegistros(registros) {
   ]));
 
   tabla.appendChild(el('tbody', {}, registros.map(r =>
-    el('tr', {}, [
+    el('tr', { class: esSinActividad(r) ? 'fila-sin-actividad' : '' }, [
       el('td', { text: fechaCorta(r.fecha) }),
-      ...CAMPOS.map(c => el('td', {
-        class: 'num' + (Number(r[c.key]) ? '' : ' cero'),
-        text: fmt(r[c.key], c.tipo),
-      })),
+      ...celdasMetricas(r),
     ])
   )));
 }
