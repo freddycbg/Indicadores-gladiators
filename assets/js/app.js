@@ -8,7 +8,43 @@ const App = {
   registrosReportes: [],  // filtro actual del panel Reportes
   editando: null,       // registro cargado en el formulario, si lo hay
   ordenReporte: { campo: 'alp', dir: 'desc' },  // orden del reporte consolidado
+
+  /* Turno de cada panel que carga datos. Ver `miTurno`. */
+  turno: { resumen: 0, reportes: 0 },
 };
+
+/**
+ * Evita que una carga vieja pise a una nueva.
+ *
+ * Cambiar el periodo mientras la carga anterior sigue en vuelo dejaba dos
+ * corriendo a la vez sobre el mismo estado. Pintaba la que TERMINABA
+ * ultima, que a menudo era la vieja: se elegia "Semana pasada" y aparecian
+ * los datos de "Hoy" —un registro— con las graficas en blanco.
+ *
+ * Cada carga toma un turno al empezar y comprueba que siga siendo el suyo
+ * despues de cada espera. Si ya no lo es, se retira sin pintar.
+ *
+ *   const esMio = miTurno('resumen');
+ *   const datos = await ...;
+ *   if (!esMio()) return;
+ */
+function miTurno(panel) {
+  const mio = ++App.turno[panel];
+  return () => App.turno[panel] === mio;
+}
+
+/**
+ * Marca un panel como ocupado mientras espera datos.
+ *
+ * Sin esto una carga lenta y una pantalla vacia se ven igual, que es lo que
+ * hacia pensar que la pagina estaba rota cuando solo iba lenta.
+ */
+function cargando(selector, activo) {
+  const panel = $(selector);
+  if (!panel) return;
+  panel.classList.toggle('esta-cargando', activo);
+  if (activo) panel.classList.remove('fallo-carga');
+}
 
 /* Un registro solo se puede corregir dentro de la ventana configurada,
    salvo que haya sesión de administrador abierta. */
@@ -367,6 +403,7 @@ function iniciarResumen() {
 }
 
 async function refrescarResumen() {
+  const esMio = miTurno('resumen');
   llenarSelectJerarquia($('#rs_linea'));
   restaurarLineaVista($('#rs_linea'));
 
@@ -374,16 +411,47 @@ async function refrescarResumen() {
   // por defecto.
   const rango = rangoDePreset($('#rs_preset').value) || rangoDePreset(PRESET_POR_DEFECTO);
   const alcance = alcanceDe($('#rs_linea').value);
+  const linea = $('#rs_linea').value;
 
-  const regs = await Store.listarRegistros({ desde: rango.desde, hasta: rango.hasta });
-  App.registrosStats = alcance ? regs.filter(r => alcance.has(r.agenteId)) : regs;
+  cargando('#panel-resumen', true);
+  try {
+    const regs = await Store.listarRegistros({ desde: rango.desde, hasta: rango.hasta });
+    if (!esMio()) return;
+    App.registrosStats = alcance ? regs.filter(r => alcance.has(r.agenteId)) : regs;
 
-  await refrescarSinReportar($('#rs_linea').value);
-  await refrescarSalud($('#rs_linea').value);
-  pintarKPIs();
-  pintarGraficas();
-  pintarTasas();
-  await refrescarComparativa($('#rs_linea').value);
+    // Lo que queda son cuatro consultas independientes entre si. En serie
+    // sumaban sus esperas; en paralelo cuesta la mas lenta. Y como todas
+    // salen ya de la misma lectura en memoria, en la practica es inmediato.
+    pintarKPIs();
+    pintarGraficas();
+    pintarTasas();
+
+    await Promise.all([
+      refrescarSinReportar(linea),
+      refrescarSalud(linea),
+      refrescarComparativa(linea),
+    ]);
+  } catch (err) {
+    if (esMio()) fallo('#panel-resumen', err);
+  } finally {
+    if (esMio()) cargando('#panel-resumen', false);
+  }
+}
+
+/**
+ * Una carga que falla tiene que decirlo.
+ *
+ * Antes, si una consulta se caia, la funcion moria a media faena y los
+ * paneles de debajo se quedaban vacios sin mas: identico a "todavia
+ * cargando" y a "no hay datos". Tres estados muy distintos con la misma
+ * pinta es lo que hacia perder el tiempo buscando el problema donde no
+ * estaba.
+ */
+function fallo(selector, err) {
+  const panel = $(selector);
+  if (panel) panel.classList.add('fallo-carga');
+  aviso('No se pudieron cargar los datos: ' + (err && err.message ? err.message : err) +
+        ' · Vuelve a elegir el periodo para reintentar.', 'error');
 }
 
 /* ---------- Panel Reportes --------------------------------------------- */
@@ -415,6 +483,7 @@ function iniciarReportes() {
 }
 
 async function refrescarReportes() {
+  const esMio = miTurno('reportes');
   llenarSelectJerarquia($('#rp_linea'));
 
   const desde = $('#rp_desde').value;
@@ -426,7 +495,17 @@ async function refrescarReportes() {
   }
 
   const alcance = alcanceDe($('#rp_linea').value);
-  const regs = await Store.listarRegistros({ desde, hasta });
+  cargando('#panel-reportes', true);
+  let regs;
+  try {
+    regs = await Store.listarRegistros({ desde, hasta });
+  } catch (err) {
+    if (esMio()) fallo('#panel-reportes', err);
+    return;
+  } finally {
+    if (esMio()) cargando('#panel-reportes', false);
+  }
+  if (!esMio()) return;
   App.registrosReportes = alcance ? regs.filter(r => alcance.has(r.agenteId)) : regs;
 
   const persona = App.agentes.find(a => a.id === $('#rp_linea').value);
@@ -3932,9 +4011,18 @@ async function iniciar() {
       : 'Conectado a Google Sheets.';
 
   try {
+    // Agentes, registros y contests no dependen entre si: pedirlos a la vez
+    // cuesta la espera del mas lento en vez de la suma de los tres. Ademas
+    // esta lectura de registros deja servida la memoria del Store, asi que
+    // la primera pestaña que se abra ya no vuelve a preguntar.
+    const registros = Store.listarRegistros().catch(() => null);
+    const contests  = actualizarBadgeContests().catch(() => null);
+
     await cargarAgentes();
+    await registros;
     await pintarRecientes();
-    await actualizarBadgeContests();
+    await contests;
+
     // Si la URL trae una ficha, se abre esa en vez de la pestaña por defecto
     aplicarHash();
   } catch (err) {

@@ -4,7 +4,12 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Seguimiento Diario · Gladiator's Team</title>
-<link rel="stylesheet" href="assets/css/styles.css">
+<!-- El ?v= se sube en cada despliegue. NO acelera la llegada de esta pagina
+     —GitHub Pages sirve el HTML con max-age=600 y no deja cambiarlo— pero
+     evita algo peor: que el navegador estrene este HTML y siga usando el
+     JavaScript viejo que ya tenia guardado. Sin el, esa mezcla de mitades
+     rompe la pagina de formas raras; con el, o esta todo viejo o todo nuevo. -->
+<link rel="stylesheet" href="assets/css/styles.css?v=2">
 <link rel="icon" type="image/png" href="assets/img/favicon.png">
 <meta name="theme-color" content="#0A1730">
 </head>
@@ -634,10 +639,10 @@
   <span id="pieModo"></span>
 </footer>
 
-<script src="assets/js/config.js"></script>
-<script src="assets/js/util.js"></script>
-<script src="assets/js/store.js"></script>
-<script src="assets/js/charts.js"></script>
-<script src="assets/js/app.js"></script>
+<script src="assets/js/config.js?v=2"></script>
+<script src="assets/js/util.js?v=2"></script>
+<script src="assets/js/store.js?v=2"></script>
+<script src="assets/js/charts.js?v=2"></script>
+<script src="assets/js/app.js?v=2"></script>
 </body>
 </html>

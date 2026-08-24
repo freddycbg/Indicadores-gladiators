@@ -650,6 +650,59 @@ const Store = (() => {
     return json.data;
   }
 
+  /* =======================================================================
+     MEMORIA DE CONSULTAS
+
+     Cada llamada al Apps Script cuesta segundos, y cuesta lo mismo pida lo
+     que pida: el backend relee la hoja entera y filtra despues. Medido en
+     produccion con 306 filas, un solo dia tardaba 6.2 s y la hoja completa
+     3.9 s. El filtro no ahorra nada; el viaje es todo el costo.
+
+     De ahi las dos decisiones de aqui abajo:
+
+     1. Se guarda la PROMESA, no el resultado. Asi dos vistas que piden lo
+        mismo a la vez comparten un unico viaje en lugar de hacer dos. Abrir
+        el Resumen lanzaba 13 llamadas, 8 de ellas duplicados literales.
+
+     2. La entrada vive poco. Esto es para colapsar la rafaga de una carga,
+        no para servir datos viejos: pasado el plazo se vuelve a preguntar.
+     ======================================================================= */
+
+  const TTL_LECTURA = 30000;
+  const memoria = new Map();
+
+  function claveDe(accion, datos) {
+    return accion + '|' + JSON.stringify(datos || {});
+  }
+
+  function leerConMemoria(accion, datos) {
+    const clave = claveDe(accion, datos);
+    const guardada = memoria.get(clave);
+    if (guardada && Date.now() - guardada.t < TTL_LECTURA) return guardada.promesa;
+
+    // Un fallo no se cachea: reintentar tiene que poder funcionar.
+    const promesa = llamar(accion, datos).catch(err => {
+      memoria.delete(clave);
+      throw err;
+    });
+    memoria.set(clave, { t: Date.now(), promesa });
+    return promesa;
+  }
+
+  /* Cualquier escritura borra la memoria entera. Podria invalidarse solo lo
+     afectado, pero las escrituras son raras y equivocarse ahi significa
+     mostrar datos viejos; barrer todo no tiene ese riesgo. */
+  function olvidarMemoria() { memoria.clear(); }
+
+  /** Envuelve una escritura para que lo siguiente que se lea sea fresco. */
+  function escribir(fn) {
+    return async (...args) => {
+      const r = await fn(...args);
+      olvidarMemoria();
+      return r;
+    };
+  }
+
   /* Marca si el Apps Script publicado todavia no conoce las funciones
      nuevas. Permite subir la pagina y actualizar la hoja despues, sin que
      el equipo se encuentre errores mientras tanto. */
@@ -672,25 +725,65 @@ const Store = (() => {
     }
   }
 
+  /**
+   * Filtra los registros como lo haria el backend.
+   *
+   * La lista llega ya ordenada por fecha descendente y filtrar no altera
+   * el orden, asi que no hace falta reordenar.
+   */
+  function filtrarRegistros(regs, f = {}) {
+    return regs.filter(r =>
+      (!f.desde    || r.fecha >= f.desde) &&
+      (!f.hasta    || r.fecha <= f.hasta) &&
+      (!f.agenteId || r.agenteId === f.agenteId));
+  }
+
   const sheets = {
-    listarAgentes:     ()             => llamar('listarAgentes'),
-    crearAgente:       (a)            => llamar('crearAgente', { agente: a }),
-    actualizarAgente:  (id, cambios)  => llamar('actualizarAgente', { id, cambios }),
-    eliminarAgente:    (id, opts = {})=> llamar('eliminarAgente', { id, ...opts }),
-    listarRegistros:   (f = {})       => llamar('listarRegistros', f),
-    obtenerRegistro:   (c)            => llamar('obtenerRegistro', c),
-    guardarRegistro:   (r)            => llamar('guardarRegistro', { registro: r }),
-    eliminarRegistro:  (id)           => llamar('eliminarRegistro', { id }),
-    // Lecturas tolerantes: si la hoja aun no tiene estas funciones, la
-    // pestana se ve vacia en vez de romperse.
-    listarMetas:       (f = {})       => tolerante(() => llamar('listarMetas', f), []),
-    listarContests:    ()             => tolerante(() => llamar('listarContests'), []),
+    listarAgentes:     ()             => leerConMemoria('listarAgentes'),
+    listarMetas:       (f = {})       => tolerante(() => leerConMemoria('listarMetas', f), []),
+    listarContests:    ()             => tolerante(() => leerConMemoria('listarContests'), []),
+
+    /**
+     * Se pide SIEMPRE la hoja completa y se recorta aqui.
+     *
+     * Parece al reves, pero pedir un rango no ahorra tiempo —el backend lee
+     * todo igual— y en cambio cada rango distinto es un viaje mas. El
+     * Resumen necesita cuatro rangos: pidiendolos por separado son cuatro
+     * viajes de segundos; pidiendo todo una vez es uno solo, y los otros
+     * tres salen de memoria. Lo que se paga a cambio es transferir algunas
+     * filas de mas, que sobre estos volumenes no se nota.
+     */
+    async listarRegistros(f = {}) {
+      const todos = await leerConMemoria('listarRegistros', {});
+      return filtrarRegistros(todos, f);
+    },
+
+    /**
+     * Sale de la misma lista, sin viaje propio.
+     *
+     * Se consulta cada vez que se cambia la fecha o el agente en el
+     * formulario, que es constante: pagar un viaje de segundos ahi hacia
+     * la captura penosa. Si otro acabara de guardar ese mismo dia dentro
+     * del plazo de la memoria, aqui saldria "no existe" y no se avisaria
+     * de la correccion — pero el backend reemplaza por fecha y agente, asi
+     * que no se duplica nada.
+     */
+    async obtenerRegistro({ fecha, agenteId }) {
+      const todos = await leerConMemoria('listarRegistros', {});
+      return todos.find(r => r.fecha === fecha && r.agenteId === agenteId) || null;
+    },
 
     // Las escrituras si fallan a la vista: guardar algo que no se guarda
-    // seria peor que un error claro.
-    guardarMetas:      (lista)        => llamar('guardarMetas', { metas: lista }),
-    guardarContest:    (c)            => llamar('guardarContest', { contest: c }),
-    eliminarContest:   (id)           => llamar('eliminarContest', { id }),
+    // seria peor que un error claro. Todas invalidan la memoria.
+    crearAgente:       escribir((a)           => llamar('crearAgente', { agente: a })),
+    actualizarAgente:  escribir((id, cambios) => llamar('actualizarAgente', { id, cambios })),
+    eliminarAgente:    escribir((id, o = {})  => llamar('eliminarAgente', { id, ...o })),
+    guardarRegistro:   escribir((r)           => llamar('guardarRegistro', { registro: r })),
+    eliminarRegistro:  escribir((id)          => llamar('eliminarRegistro', { id })),
+    guardarMetas:      escribir((lista)       => llamar('guardarMetas', { metas: lista })),
+    guardarContest:    escribir((c)           => llamar('guardarContest', { contest: c })),
+    eliminarContest:   escribir((id)          => llamar('eliminarContest', { id })),
+
     validarAdmin:      (pin)          => llamar('validarAdmin', { pinPrueba: pin }),
     reiniciarDemo:     async ()       => { throw new Error('No disponible en modo Sheets.'); },
   };
