@@ -86,6 +86,7 @@ const CAMPOS = [
   { key: 'noShow',      label: 'NO SHOW',                corto: 'NO SHOW',       tipo: 'entero', mejor: 'bajo' },
   { key: 'noCalifica',  label: 'No Califica',            corto: 'NO CALIF.',     tipo: 'entero', mejor: 'bajo' },
   { key: 'reschedule',  label: 'Reschedule',             corto: 'RESCH.',        tipo: 'entero', mejor: 'bajo' },
+  { key: 'citaCedida',  label: 'Cita cedida',            corto: 'CEDIDA',        tipo: 'entero', mejor: 'bajo' },
   { key: 'referidos',   label: 'Referidos (REF)',        corto: 'REF',           tipo: 'entero' },
   { key: 'alp',         label: 'ALP',                    corto: 'ALP',           tipo: 'moneda' },
 ];
@@ -211,6 +212,37 @@ const CONSTANCIA = {
   verde:    90,
   amarillo: 60,
 };
+
+/* =========================================================================
+   DIAS SIN ACTIVIDAD
+
+   Un agente que no trabajo un dia puede reportarlo como tal en vez de
+   mandar una fila de ceros. No es lo mismo "trabaje y no vendi nada" que
+   "no trabaje": lo primero es un mal dia, lo segundo no es un dato.
+
+   El dia declarado se DESCUENTA de las jornadas esperadas. Quien libro el
+   martes y trabajo los otros seis sale con 6 de 6, no con 6 de 7: avisar
+   no premia ni castiga. Y como el dia no cuenta como jornada, tampoco
+   entra en los promedios "por dia" ni en los conteos de participacion.
+
+   La lista de motivos es cerrada a proposito: un campo de texto libre no
+   se puede agrupar despues porque cada quien lo escribe distinto.
+   ========================================================================= */
+const MOTIVOS_SIN_ACTIVIDAD = [
+  { key: 'libre',        label: 'Día libre' },
+  { key: 'vacaciones',   label: 'Vacaciones' },
+  { key: 'enfermedad',   label: 'Enfermedad' },
+  { key: 'capacitacion', label: 'Capacitación' },
+  { key: 'personal',     label: 'Asunto personal' },
+  { key: 'otro',         label: 'Otro' },
+];
+
+/** Etiqueta legible de un motivo. Un motivo desconocido se muestra tal cual. */
+function etiquetaMotivo(key) {
+  if (!key) return 'Sin motivo';
+  const m = MOTIVOS_SIN_ACTIVIDAD.find(x => x.key === key);
+  return m ? m.label : String(key);
+}
 
 /* Umbrales del semaforo, sobre el % de cumplimiento promedio */
 const SEMAFORO = {

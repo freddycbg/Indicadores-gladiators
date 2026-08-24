@@ -834,6 +834,82 @@ input:invalid:not(:placeholder-shown) { border-color: var(--critico); }
   border-left: 3px solid var(--critico);
 }
 
+/* ---------- Días sin actividad ------------------------------------------
+   Deliberadamente neutro, no semáforo: librar un día no es bueno ni malo,
+   y pintarlo de rojo sugeriría lo contrario de lo que el dato dice.
+   ------------------------------------------------------------------------- */
+.bloque-sin-actividad {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: 18px;
+  margin-bottom: 18px;
+  padding: 12px 14px;
+  border: 1px dashed var(--borde-fuerte);
+  border-radius: var(--r-md);
+  background: var(--superficie-2);
+}
+
+.check-linea {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  cursor: pointer;
+  min-width: 0;
+}
+.check-linea input { margin-top: 3px; flex: none; }
+.check-linea span  { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.check-linea strong { font-size: .9rem; font-weight: 600; color: var(--tinta); }
+.check-linea small  { font-size: .78rem; color: var(--tinta-3); }
+
+/* No crece: un desplegable de seis opciones cortas no necesita media fila,
+   y estirado desequilibra el bloque frente a la casilla. */
+.campo-motivo { flex: 0 1 240px; min-width: 190px; }
+
+/* Métricas apagadas: se ven, pero se lee que no están en juego. */
+.rejilla-form--apagada { opacity: .45; }
+.rejilla-form--apagada input { cursor: not-allowed; }
+
+.pastilla-libre {
+  display: inline-block;
+  min-width: 28px;
+  text-align: center;
+  font-weight: 700;
+  font-size: .78rem;
+  font-variant-numeric: tabular-nums;
+  padding: 2px 8px;
+  border-radius: 999px;
+  cursor: help;
+  background: var(--acento-lavado);
+  color: var(--acento-alto);
+}
+
+.tabla tr.fila-sin-actividad td { background: var(--superficie-2); }
+
+/* A la izquierda, pegada al nombre: la marca sustituye a los números y se
+   lee en el mismo orden en que se leería la fila. Centrada quedaría
+   flotando en medio de una celda de 700px sin relación con nada. */
+.tabla td.celda-sin-actividad {
+  text-align: left;
+  white-space: nowrap;
+}
+.marca-sin-actividad {
+  display: inline-block;
+  font-size: .72rem;
+  font-weight: 700;
+  letter-spacing: .04em;
+  text-transform: uppercase;
+  padding: 2px 9px;
+  border-radius: 999px;
+  background: var(--acento-lavado);
+  color: var(--acento-alto);
+}
+.motivo-sin-actividad {
+  margin-left: 9px;
+  font-size: .8rem;
+  color: var(--tinta-2);
+}
+
 /* Cabeceras que ordenan al pulsarlas */
 .tabla th.ordenable {
   cursor: pointer;

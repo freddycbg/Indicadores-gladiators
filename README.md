@@ -222,6 +222,43 @@ texto dice cuántos están por debajo, para que el problema no se esconda.
 
 No hay regla de inactividad: quien no reporta acumula poco y su % cae solo.
 
+### Días sin actividad
+
+Un agente que no trabajó un día lo reporta como tal: casilla **"Sin actividad
+este día"** más un motivo de lista cerrada (`MOTIVOS_SIN_ACTIVIDAD` en
+`config.js`). Al marcarla los campos de métricas se vacían y se deshabilitan.
+
+No es lo mismo *trabajé y no vendí nada* que *no trabajé*. Lo primero es un mal
+día; lo segundo no es un dato. Por eso el día declarado:
+
+- **Se descuenta de las jornadas esperadas.** Quien libró el martes y trabajó
+  los otros seis sale con 6 de 6, no con 6 de 7. Avisar no premia ni castiga.
+- **No entra en ningún conteo de días ni de personas**, así que no arrastra los
+  promedios "por día" ni el indicador de participación. Las sumas no cambian:
+  el registro es de ceros.
+- **No aparece como fila de ceros.** En las tablas ocupa el ancho de las
+  métricas con la marca y el motivo. En el CSV va una columna *Sin actividad*
+  antes de los números.
+- **Cuenta como reportado** para "Sin reportar hoy": el agente sí reportó.
+
+El motivo es una lista cerrada a propósito: un campo de texto libre no se puede
+agrupar después porque cada quien lo escribe distinto.
+
+Lo que **no** cambia: las metas y los contests siguen midiéndose por totales, así
+que una semana con días libres cumple menos meta. Prorratear la meta sería otra
+decisión, no un efecto secundario de esta.
+
+### Cita cedida
+
+Cuántas citas pasó ese día a otra persona. Es una métrica más de `CAMPOS`, así
+que aparece sola en el formulario, las tablas, el CSV y las estadísticas.
+
+Va marcada como `mejor: 'bajo'` y agrupada con NO SHOW, No Califica y
+Reschedule: son las cuatro maneras en que una cita agendada no acaba en
+presentación propia. Si en tu operación ceder es trabajo de equipo normal y no
+una fuga, quita ese `mejor: 'bajo'` de `config.js` y la comparativa dejará de
+pintarlo en rojo cuando suba.
+
 ### Constancia y "sin reportar"
 
 `DIAS_HABILES` dice qué días cuentan como jornada. **Por defecto son los siete**,
