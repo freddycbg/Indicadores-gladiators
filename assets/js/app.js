@@ -4376,11 +4376,12 @@ async function iniciar() {
   $('#marcaEquipo').textContent = CONFIG.EQUIPO;
   $('#pastillaModo').hidden = !Store.esDemo;
   $('#pastillaModo').textContent = Store.esPaginaDePrueba ? 'Página de prueba' : 'Datos de prueba';
+  const origenDatos = Store.modo === 'supabase' ? 'Supabase' : 'Google Sheets';
   $('#pieModo').textContent = Store.esPaginaDePrueba
-    ? 'Página de prueba en localhost — datos ficticios guardados solo en este navegador. La página publicada sigue conectada a Google Sheets y no se ve afectada.'
+    ? 'Página de prueba en localhost — datos ficticios guardados solo en este navegador. La página publicada no se ve afectada.'
     : Store.esDemo
       ? 'Modo de prueba — los datos se guardan solo en este navegador.'
-      : 'Conectado a Google Sheets.';
+      : `Conectado a ${origenDatos}.`;
 
   Store.alActualizar(repintarConDatosNuevos);
   Store.alCambiarEstado(pintarEstadoDatos);
