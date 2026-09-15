@@ -715,6 +715,12 @@ const Store = (() => {
     guardarMetas:     (d) => ['guardar_metas',     { p_metas: d.metas, p_pin: Sesion.pin() }],
     guardarContest:   (d) => ['guardar_contest',   { p_contest: d.contest, p_pin: Sesion.pin() }],
     eliminarContest:  (d) => ['eliminar_contest',  { p_id: d.id, p_pin: Sesion.pin() }],
+
+    // Las imagenes no pasan por la base sino por la funcion del servidor
+    // "multimedia" (supabase/funciones), que valida el PIN y escribe en el
+    // almacenamiento con la clave secreta.
+    subirMultimedia:    (d) => ['funciones:multimedia', { accion: 'subir', archivo: d.archivo, pin: Sesion.pin() }],
+    eliminarMultimedia: (d) => ['funciones:multimedia', { accion: 'eliminar', fileId: d.fileId, pin: Sesion.pin() }],
   };
 
   async function peticionSupabase(accion, datos, signal) {
@@ -725,8 +731,11 @@ const Store = (() => {
       throw err;
     }
     const [funcion, parametros] = traducir(datos);
+    const url = funcion.startsWith('funciones:')
+      ? `${CONFIG.SUPABASE_URL}/functions/v1/${funcion.slice('funciones:'.length)}`
+      : `${CONFIG.SUPABASE_URL}/rest/v1/rpc/${funcion}`;
 
-    const res = await fetch(`${CONFIG.SUPABASE_URL}/rest/v1/rpc/${funcion}`, {
+    const res = await fetch(url, {
       method: 'POST',
       headers: { apikey: CONFIG.SUPABASE_CLAVE, 'Content-Type': 'application/json' },
       body: JSON.stringify(parametros),
@@ -1131,6 +1140,12 @@ const Store = (() => {
     if (MODO_EFECTIVO === 'demo') {
       const guardadas = leerLS(LS_MULTIMEDIA, {});
       return guardadas[fileId] || '';
+    }
+    // Las imagenes de Supabase se guardan como "AAAA-MM/uuid.ext"; un id sin
+    // barra es de la epoca de Drive y se sigue mostrando desde alli.
+    if (String(fileId).includes('/')) {
+      const ruta = String(fileId).split('/').map(encodeURIComponent).join('/');
+      return `${CONFIG.SUPABASE_URL}/storage/v1/object/public/contests/${ruta}`;
     }
     return `https://drive.google.com/thumbnail?id=${encodeURIComponent(fileId)}&sz=w${ancho}`;
   }

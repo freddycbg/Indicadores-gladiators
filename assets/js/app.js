@@ -2973,7 +2973,9 @@ async function prepararImagen(file) {
  */
 function explicarFalloSubida(err) {
   const msg = String(err && err.message ? err.message : err);
-  if (/404|<!DOCTYPE|no es valid/i.test(msg)) {
+  // Lo del permiso de Drive solo aplica al Apps Script. Con Supabase el
+  // mensaje del servidor ya es entendible y se muestra tal cual.
+  if (Store.modo === 'sheets' && /404|<!DOCTYPE|no es valid/i.test(msg)) {
     return 'el Apps Script aún no tiene permiso para usar Google Drive. ' +
            'En la hoja: menú Gladiators → "Probar acceso a Drive", acepta el ' +
            'permiso que pide Google, y vuelve a intentarlo.';
