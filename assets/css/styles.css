@@ -216,6 +216,38 @@ h3 { font-size: 1.05rem; }
   border: 1px solid rgba(246, 192, 96, 0.35);
 }
 
+/* De cuando son los datos, si no son de este momento. Discreto mientras se
+   actualiza; visible si la actualizacion fallo, porque entonces lo que se
+   ve puede estar atrasado. */
+.estado-datos {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: .74rem;
+  color: rgba(255, 255, 255, 0.72);
+  white-space: nowrap;
+  cursor: help;
+}
+.estado-datos::before {
+  content: '';
+  width: 7px; height: 7px;
+  border-radius: 50%;
+  background: var(--oro);
+  animation: latido 1.2s ease-in-out infinite;
+}
+.estado-datos--error { color: #ffd9d4; }
+.estado-datos--error::before { background: #e46a5e; animation: none; }
+
+@keyframes latido { 0%, 100% { opacity: .35; } 50% { opacity: 1; } }
+
+@media (prefers-reduced-motion: reduce) {
+  .estado-datos::before { animation: none; }
+}
+
+@media (max-width: 640px) {
+  .estado-datos { font-size: 0; gap: 0; }   /* en movil solo el punto */
+}
+
 .btn-icono {
   width: 34px; height: 34px;
   border-radius: var(--r-sm);
