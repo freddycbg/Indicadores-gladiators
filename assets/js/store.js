@@ -675,75 +675,348 @@ const Store = (() => {
   };
 
   /* =======================================================================
-     BACKEND SHEETS — Google Apps Script
-     Se usa POST con Content-Type text/plain para evitar el preflight CORS
-     que Apps Script no responde.
+     BACKEND REMOTO — Supabase o Google Apps Script
+
+     Los dos responden con el mismo sobre, {ok, data} o {ok, error}, asi que
+     todo lo de abajo —paquete unico, copia local, reintentos— es comun. Lo
+     unico que cambia es como viaja cada peticion.
      ======================================================================= */
 
-  async function llamar(accion, datos = {}) {
-    if (!CONFIG.SHEETS_URL) {
-      throw new Error('Falta configurar CONFIG.SHEETS_URL en assets/js/config.js');
-    }
+  function urlDelBackend() {
+    return MODO_EFECTIVO === 'supabase' ? CONFIG.SUPABASE_URL : CONFIG.SHEETS_URL;
+  }
+
+  /* Apps Script: POST con Content-Type text/plain, para evitar el preflight
+     CORS que Apps Script no responde. */
+  async function peticionAppsScript(accion, datos, signal) {
     const res = await fetch(CONFIG.SHEETS_URL, {
       method: 'POST',
       headers: { 'Content-Type': 'text/plain;charset=utf-8' },
       body: JSON.stringify({ accion, ...datos, pin: Sesion.pin() }),
+      signal,
     });
-    if (!res.ok) throw new Error(`Error de red (${res.status})`);
-    const json = await res.json();
-    if (!json.ok) throw new Error(json.error || 'Error en el servidor.');
+    if (!res.ok) throw new Error(`Google no respondió (${res.status})`);
+    return res;
+  }
+
+  /* Supabase: cada accion de la pagina es una funcion de la base, definida
+     en supabase/migraciones. Aqui solo se traduce el nombre y los
+     parametros. El PIN viaja siempre y lo valida la base, nunca la pagina. */
+  const RPC_SUPABASE = {
+    cargaInicial:     ()  => ['carga_inicial',     {}],
+    diagnostico:      ()  => ['diagnostico',       {}],
+    validarAdmin:     (d) => ['validar_admin',     { p_pin: d.pinPrueba }],
+    guardarRegistro:  (d) => ['guardar_registro',  { p_registro: d.registro, p_pin: Sesion.pin() }],
+    eliminarRegistro: (d) => ['eliminar_registro', { p_id: d.id, p_pin: Sesion.pin() }],
+    crearAgente:      (d) => ['crear_agente',      { p_agente: d.agente, p_pin: Sesion.pin() }],
+    actualizarAgente: (d) => ['actualizar_agente', { p_id: d.id, p_cambios: d.cambios, p_pin: Sesion.pin() }],
+    eliminarAgente:   (d) => ['eliminar_agente',   { p_id: d.id, p_borrar_registros: d.borrarRegistros === true,
+                                                     p_pin: Sesion.pin() }],
+    guardarMetas:     (d) => ['guardar_metas',     { p_metas: d.metas, p_pin: Sesion.pin() }],
+    guardarContest:   (d) => ['guardar_contest',   { p_contest: d.contest, p_pin: Sesion.pin() }],
+    eliminarContest:  (d) => ['eliminar_contest',  { p_id: d.id, p_pin: Sesion.pin() }],
+
+    // Las imagenes no pasan por la base sino por la funcion del servidor
+    // "multimedia" (supabase/funciones), que valida el PIN y escribe en el
+    // almacenamiento con la clave secreta.
+    subirMultimedia:    (d) => ['funciones:multimedia', { accion: 'subir', archivo: d.archivo, pin: Sesion.pin() }],
+    eliminarMultimedia: (d) => ['funciones:multimedia', { accion: 'eliminar', fileId: d.fileId, pin: Sesion.pin() }],
+  };
+
+  async function peticionSupabase(accion, datos, signal) {
+    const traducir = RPC_SUPABASE[accion];
+    if (!traducir) {
+      const err = new Error(`Acción desconocida: ${accion}`);
+      err.delServidor = true;
+      throw err;
+    }
+    const [funcion, parametros] = traducir(datos);
+    const url = funcion.startsWith('funciones:')
+      ? `${CONFIG.SUPABASE_URL}/functions/v1/${funcion.slice('funciones:'.length)}`
+      : `${CONFIG.SUPABASE_URL}/rest/v1/rpc/${funcion}`;
+
+    const res = await fetch(url, {
+      method: 'POST',
+      headers: { apikey: CONFIG.SUPABASE_CLAVE, 'Content-Type': 'application/json' },
+      body: JSON.stringify(parametros),
+      signal,
+    });
+    if (res.ok) return res;
+
+    // Un 4xx es una peticion mal formada (funcion o parametro que no existe):
+    // repetirla da lo mismo. Salvo 408 y 429, que si son pasajeros.
+    let detalle = '';
+    try { detalle = (await res.json()).message || ''; } catch { /* sin cuerpo */ }
+    const err = new Error(`La base de datos rechazó la petición (${res.status})` +
+                          (detalle ? `: ${detalle}` : ''));
+    err.delServidor = res.status >= 400 && res.status < 500 && ![408, 429].includes(res.status);
+    throw err;
+  }
+
+  /**
+   * Una llamada al Apps Script.
+   *
+   * `reintentos` es solo para lecturas. Google a veces tarda en arrancar la
+   * ejecucion y termina devolviendo su pagina generica de 404: medido en
+   * produccion, 5 de 12 lecturas seguidas. Es un fallo pasajero de la
+   * plataforma —la misma llamada al rato sale bien— asi que reintentar lo
+   * convierte en exito. Las escrituras no reintentan: crear algo dos veces
+   * es peor que un error claro.
+   *
+   * Un error que devuelve la propia aplicacion (json.ok === false) no se
+   * reintenta: un PIN malo o una accion desconocida no mejoran repitiendo.
+   */
+  async function llamar(accion, datos = {}, { reintentos = 0, limiteMs = 0 } = {}) {
+    if (!urlDelBackend()) {
+      throw new Error('Falta configurar la conexión de datos en assets/js/config.js');
+    }
+    for (let intento = 0; ; intento++) {
+      try {
+        return await llamarUnaVez(accion, datos, limiteMs);
+      } catch (err) {
+        if (err.delServidor || intento >= reintentos) throw err;
+        // Espera creciente con algo de azar, para que varios agentes que
+        // fallaron a la vez no vuelvan a chocar todos en el mismo instante.
+        const espera = [1000, 3000, 6000][Math.min(intento, 2)] + Math.random() * 500;
+        await new Promise(r => setTimeout(r, espera));
+      }
+    }
+  }
+
+  /**
+   * `limiteMs` corta una peticion colgada para poder reintentarla. Medido:
+   * Google llego a retener una lectura 100 s antes de devolver un 404, y sin
+   * tope todo lo que esperaba detras se quedaba igual de colgado.
+   *
+   * Solo lo usan las lecturas. Abortar una escritura en el navegador NO la
+   * cancela en el servidor: el agente veria un error, guardaria otra vez, y
+   * quedaria duplicado.
+   */
+  async function llamarUnaVez(accion, datos, limiteMs = 0) {
+    const control = limiteMs ? new AbortController() : null;
+    const reloj = control ? setTimeout(() => control.abort(), limiteMs) : null;
+    const signal = control ? control.signal : undefined;
+    const servicio = MODO_EFECTIVO === 'supabase' ? 'La base de datos' : 'Google';
+
+    let json;
+    try {
+      const res = MODO_EFECTIVO === 'supabase'
+        ? await peticionSupabase(accion, datos, signal)
+        : await peticionAppsScript(accion, datos, signal);
+
+      try {
+        json = await res.json();
+      } catch (e) {
+        if (e.name === 'AbortError') throw e;
+        throw new Error(`${servicio} devolvió una página de error en lugar de los datos.`);
+      }
+    } catch (e) {
+      if (e.name === 'AbortError') {
+        throw new Error(`${servicio} tardó más de ${Math.round(limiteMs / 1000)} s en responder.`);
+      }
+      throw e;
+    } finally {
+      if (reloj) clearTimeout(reloj);
+    }
+    if (!json.ok) {
+      const err = new Error(json.error || 'Error en el servidor.');
+      err.delServidor = true;
+      throw err;
+    }
     return json.data;
   }
 
   /* =======================================================================
-     MEMORIA DE CONSULTAS
+     PAQUETE DE DATOS
 
-     Cada llamada al Apps Script cuesta segundos, y cuesta lo mismo pida lo
-     que pida: el backend relee la hoja entera y filtra despues. Medido en
-     produccion con 306 filas, un solo dia tardaba 6.2 s y la hoja completa
-     3.9 s. El filtro no ahorra nada; el viaje es todo el costo.
+     Todo lo que la pagina lee —agentes, registros, metas y contests— viaja
+     junto en un solo paquete, y se muestra primero lo que ya se tiene.
 
-     De ahi las dos decisiones de aqui abajo:
+     Por que. Medido en produccion el 14/09 con 618 registros: la pagina
+     estaba lista en 0.7 s y tardaba 24.5 s en pintar datos. El 97% de la
+     espera era Google arrancando ejecuciones del Apps Script, no leer la
+     hoja (eso son ~100 ms con el cache). Y la cola es compartida: el Web App
+     corre como "Yo", asi que todos los agentes gastan el mismo cupo de
+     ejecuciones simultaneas. Cada llamada de un agente es espera para otro.
 
-     1. Se guarda la PROMESA, no el resultado. Asi dos vistas que piden lo
-        mismo a la vez comparten un unico viaje en lugar de hacer dos. Abrir
-        el Resumen lanzaba 13 llamadas, 8 de ellas duplicados literales.
+     Tres decisiones:
 
-     2. La entrada vive poco. Esto es para colapsar la rafaga de una carga,
-        no para servir datos viejos: pasado el plazo se vuelve a preguntar.
+     1. UN SOLO VIAJE. `cargaInicial` trae las cuatro listas en una ejecucion
+        en vez de cuatro, y la pagina recorta por fecha, agente o semana en
+        el navegador. Menos cola para todo el equipo, no solo para quien
+        abre.
+
+     2. LO QUE YA SE TIENE, AL INSTANTE. El ultimo paquete bueno se guarda
+        en este dispositivo. Al abrir la pagina se pinta con el y se pide el
+        nuevo por detras; cuando llega, si cambio algo, se avisa para
+        repintar. Desde la segunda visita la pagina deja de esperar a Google.
+        Nunca se hace pasar lo viejo por actual: mientras se actualiza, o si
+        la actualizacion falla, la cabecera lo dice y da la hora de los datos.
+
+     3. DESPUES DE ESCRIBIR, LA HOJA. Tras guardar, lo siguiente que se lee
+        espera el paquete fresco: quien acaba de guardar tiene que ver lo
+        suyo, no la copia de antes.
      ======================================================================= */
 
-  const TTL_LECTURA = 30000;
-  const memoria = new Map();
+  /* Dentro de este plazo el paquete se usa sin preguntar a nadie. Cambiar
+     de pestaña o de periodo no dispara ejecuciones; pasado el plazo se usa
+     igual y se refresca por detras. */
+  const FRESCO_MS = 60000;
 
-  function claveDe(accion, datos) {
-    return accion + '|' + JSON.stringify(datos || {});
+  /* La version va en la clave: si el formato del paquete cambia, la copia
+     vieja simplemente no se encuentra. */
+  const CLAVE_COPIA = 'gt_paquete_v1';
+
+  let paquete     = null;   // { agentes, registros, metas, contests, t }
+  let enCurso     = null;   // { gen, promesa } de la actualizacion en vuelo
+  let generacion  = 0;      // sube con cada escritura
+  let forzarHoja  = false;  // tras escribir: la proxima lectura espera a la hoja
+  let sinCargaInicial = false;
+
+  const estado = { actualizando: false, error: null, desdeCopia: false };
+  const oyentesDatos  = new Set();
+  const oyentesEstado = new Set();
+
+  function estadoPublico() {
+    return {
+      actualizando: estado.actualizando,
+      error:        estado.error,
+      desdeCopia:   estado.desdeCopia,
+      hayDatos:     !!paquete,
+      t:            paquete ? paquete.t : null,
+    };
   }
 
-  function leerConMemoria(accion, datos) {
-    const clave = claveDe(accion, datos);
-    const guardada = memoria.get(clave);
-    if (guardada && Date.now() - guardada.t < TTL_LECTURA) return guardada.promesa;
+  function notificar(oyentes, dato) {
+    oyentes.forEach(fn => { try { fn(dato); } catch (e) { console.error(e); } });
+  }
 
-    // Un fallo no se cachea: reintentar tiene que poder funcionar.
-    const promesa = llamar(accion, datos).catch(err => {
-      memoria.delete(clave);
-      throw err;
-    });
-    memoria.set(clave, { t: Date.now(), promesa });
+  function leerCopia() {
+    try {
+      const c = JSON.parse(localStorage.getItem(CLAVE_COPIA) || 'null');
+      // La copia es de UNA hoja: si la URL cambio, no le pertenece.
+      if (!c || c.url !== urlDelBackend() || !Array.isArray(c.registros)) return null;
+      return c;
+    } catch {
+      return null;
+    }
+  }
+
+  function guardarCopia(p) {
+    try {
+      localStorage.setItem(CLAVE_COPIA, JSON.stringify({ ...p, url: urlDelBackend() }));
+    } catch {
+      // Sin espacio o almacenamiento bloqueado (ventana privada): se sigue
+      // funcionando, solo que cada visita espera a la hoja como antes.
+    }
+  }
+
+  /** Para saber si lo que llego es distinto de lo que se esta mostrando. */
+  function huella(p) {
+    return JSON.stringify([p.agentes, p.registros, p.metas, p.contests]);
+  }
+
+  /* Politica de las lecturas: tres intentos, 20 s cada uno como maximo. */
+  const LECTURA = { reintentos: 2, limiteMs: 20000 };
+
+  async function traerDeLaHoja() {
+    if (!sinCargaInicial) {
+      try {
+        const d = await llamar('cargaInicial', {}, LECTURA);
+        return { agentes: d.agentes, registros: d.registros, metas: d.metas, contests: d.contests };
+      } catch (err) {
+        if (!esAccionDesconocida(err)) throw err;
+        // El Apps Script publicado todavia no tiene cargaInicial. Se sigue
+        // con las lecturas sueltas: mas lento, pero permite subir la pagina
+        // antes de actualizar la hoja sin que nadie vea errores.
+        sinCargaInicial = true;
+      }
+    }
+    const [agentes, registros, metas, contests] = await Promise.all([
+      llamar('listarAgentes',   {}, LECTURA),
+      llamar('listarRegistros', {}, LECTURA),
+      tolerante(() => llamar('listarMetas',    {}, LECTURA), []),
+      tolerante(() => llamar('listarContests', {}, LECTURA), []),
+    ]);
+    return { agentes, registros, metas, contests };
+  }
+
+  /**
+   * Pide el paquete a la hoja. Si ya hay una peticion en vuelo que sigue
+   * siendo valida, se une a ella en vez de lanzar otra.
+   *
+   * `avisar` decide si un cambio se anuncia a los oyentes. Quien espera el
+   * resultado para pintar no lo necesita; una actualizacion por detras si,
+   * porque nadie mas va a repintar.
+   */
+  function actualizar({ avisar }) {
+    if (enCurso && enCurso.gen === generacion) return enCurso.promesa;
+
+    const gen = generacion;
+    const habiaDatos = !!paquete;
+    estado.actualizando = true;
+    notificar(oyentesEstado, estadoPublico());
+
+    const promesa = traerDeLaHoja()
+      .then(nuevo => {
+        // Una escritura cayo mientras esto viajaba: lo que trajo es de antes
+        // de guardar. Se descarta y se vuelve a pedir.
+        if (gen !== generacion) return actualizar({ avisar });
+
+        const cambio = !paquete || huella(nuevo) !== huella(paquete);
+        paquete = { ...nuevo, t: Date.now() };
+        forzarHoja = false;
+        estado.error = null;
+        estado.desdeCopia = false;
+        guardarCopia(paquete);
+
+        if (cambio && avisar && habiaDatos) notificar(oyentesDatos, paquete);
+        return paquete;
+      })
+      .catch(err => {
+        estado.error = err;
+        throw err;
+      })
+      .finally(() => {
+        if (enCurso && enCurso.gen === gen) enCurso = null;
+        estado.actualizando = !!enCurso;
+        notificar(oyentesEstado, estadoPublico());
+      });
+
+    enCurso = { gen, promesa };
     return promesa;
   }
 
-  /* Cualquier escritura borra la memoria entera. Podria invalidarse solo lo
-     afectado, pero las escrituras son raras y equivocarse ahi significa
-     mostrar datos viejos; barrer todo no tiene ese riesgo. */
-  function olvidarMemoria() { memoria.clear(); }
+  /** El paquete para leer: lo que haya al instante, o la hoja si no hay nada. */
+  async function obtenerPaquete() {
+    if (forzarHoja) return actualizar({ avisar: false });
+
+    if (!paquete) {
+      const copia = leerCopia();
+      if (copia) {
+        paquete = copia;
+        estado.desdeCopia = true;
+      }
+    }
+    if (!paquete) return actualizar({ avisar: false });
+
+    // La copia de una visita anterior se verifica SIEMPRE, sin importar su
+    // edad: entre visitas otro agente pudo guardar. El plazo solo aplica a
+    // lo que ya llego de la hoja en esta misma visita.
+    if (estado.desdeCopia || Date.now() - paquete.t > FRESCO_MS) {
+      // Con datos a la vista, un fallo al refrescar no rompe nada: queda
+      // anotado en el estado y la cabecera lo muestra.
+      actualizar({ avisar: true }).catch(() => {});
+    }
+    return paquete;
+  }
 
   /** Envuelve una escritura para que lo siguiente que se lea sea fresco. */
   function escribir(fn) {
     return async (...args) => {
       const r = await fn(...args);
-      olvidarMemoria();
+      generacion++;
+      forzarHoja = true;
       return r;
     };
   }
@@ -783,43 +1056,39 @@ const Store = (() => {
       (!f.agenteId || r.agenteId === f.agenteId));
   }
 
-  const sheets = {
-    listarAgentes:     ()             => leerConMemoria('listarAgentes'),
-    listarMetas:       (f = {})       => tolerante(() => leerConMemoria('listarMetas', f), []),
-    listarContests:    ()             => tolerante(() => leerConMemoria('listarContests'), []),
+  /** Filtra las metas como lo haria el backend. */
+  function filtrarMetas(metas, f = {}) {
+    return metas.filter(m =>
+      (!f.semana || m.semana === f.semana) &&
+      (!f.desde  || m.semana >= f.desde) &&
+      (!f.hasta  || m.semana <= f.hasta));
+  }
 
-    /**
-     * Se pide SIEMPRE la hoja completa y se recorta aqui.
-     *
-     * Parece al reves, pero pedir un rango no ahorra tiempo —el backend lee
-     * todo igual— y en cambio cada rango distinto es un viaje mas. El
-     * Resumen necesita cuatro rangos: pidiendolos por separado son cuatro
-     * viajes de segundos; pidiendo todo una vez es uno solo, y los otros
-     * tres salen de memoria. Lo que se paga a cambio es transferir algunas
-     * filas de mas, que sobre estos volumenes no se nota.
-     */
+  const sheets = {
+    // Todas las lecturas salen del mismo paquete: ninguna viaja por su
+    // cuenta, y cambiar de pestaña o de periodo no cuesta una ejecucion.
+    listarAgentes:  async ()       => (await obtenerPaquete()).agentes,
+    listarContests: async ()       => (await obtenerPaquete()).contests,
+    listarMetas:    async (f = {}) => filtrarMetas((await obtenerPaquete()).metas, f),
+
     async listarRegistros(f = {}) {
-      const todos = await leerConMemoria('listarRegistros', {});
-      return filtrarRegistros(todos, f);
+      return filtrarRegistros((await obtenerPaquete()).registros, f);
     },
 
     /**
-     * Sale de la misma lista, sin viaje propio.
-     *
      * Se consulta cada vez que se cambia la fecha o el agente en el
-     * formulario, que es constante: pagar un viaje de segundos ahi hacia
-     * la captura penosa. Si otro acabara de guardar ese mismo dia dentro
-     * del plazo de la memoria, aqui saldria "no existe" y no se avisaria
-     * de la correccion — pero el backend reemplaza por fecha y agente, asi
-     * que no se duplica nada.
+     * formulario. Si otro guardo ese mismo dia hace instantes, aqui podria
+     * salir "no existe" y no avisarse de la correccion — pero el backend
+     * reemplaza por fecha y agente, asi que no se duplica nada.
      */
     async obtenerRegistro({ fecha, agenteId }) {
-      const todos = await leerConMemoria('listarRegistros', {});
-      return todos.find(r => r.fecha === fecha && r.agenteId === agenteId) || null;
+      const { registros } = await obtenerPaquete();
+      return registros.find(r => r.fecha === fecha && r.agenteId === agenteId) || null;
     },
 
     // Las escrituras si fallan a la vista: guardar algo que no se guarda
-    // seria peor que un error claro. Todas invalidan la memoria.
+    // seria peor que un error claro. Tras cualquiera, lo siguiente que se
+    // lee espera el paquete fresco de la hoja.
     crearAgente:       escribir((a)           => llamar('crearAgente', { agente: a })),
     actualizarAgente:  escribir((id, cambios) => llamar('actualizarAgente', { id, cambios })),
     eliminarAgente:    escribir((id, o = {})  => llamar('eliminarAgente', { id, ...o })),
@@ -853,7 +1122,10 @@ const Store = (() => {
 
   if (MODO_EFECTIVO === 'demo') sembrarDemo();
 
-  const backend = MODO_EFECTIVO === 'sheets' ? sheets : demo;
+  // Supabase y Apps Script comparten todas las lecturas y escrituras de abajo:
+  // solo difiere el transporte, que decide llamarUnaVez.
+  const remoto = MODO_EFECTIVO === 'sheets' || MODO_EFECTIVO === 'supabase';
+  const backend = remoto ? sheets : demo;
 
   /**
    * URL con la que mostrar una imagen guardada.
@@ -869,8 +1141,15 @@ const Store = (() => {
       const guardadas = leerLS(LS_MULTIMEDIA, {});
       return guardadas[fileId] || '';
     }
+    // Las imagenes de Supabase se guardan como "AAAA-MM/uuid.ext"; un id sin
+    // barra es de la epoca de Drive y se sigue mostrando desde alli.
+    if (String(fileId).includes('/')) {
+      const ruta = String(fileId).split('/').map(encodeURIComponent).join('/');
+      return `${CONFIG.SUPABASE_URL}/storage/v1/object/public/contests/${ruta}`;
+    }
     return `https://drive.google.com/thumbnail?id=${encodeURIComponent(fileId)}&sz=w${ancho}`;
   }
+
 
   return {
     ...backend,
@@ -879,7 +1158,18 @@ const Store = (() => {
     esPaginaDePrueba: enLocalhost && CONFIG.MODO_LOCALHOST === 'demo',
     /** true si el Apps Script publicado aun no tiene Metas ni Contests. */
     backendDesactualizado: () => backendViejo,
+    /** true si el Apps Script publicado aun no tiene cargaInicial. */
+    backendSinCargaInicial: () => sinCargaInicial,
     urlMultimedia,
+
+    /** Deja el paquete listo: al instante si hay copia, si no espera a la hoja. */
+    precargar: () => (remoto ? obtenerPaquete() : Promise.resolve()),
+
+    /** Llegaron datos distintos de los que se estaban mostrando. */
+    alActualizar:   fn => { if (remoto) oyentesDatos.add(fn); },
+    /** Empezo o termino una actualizacion, o fallo. */
+    alCambiarEstado: fn => { if (remoto) oyentesEstado.add(fn); },
+    estadoDatos:    () => estadoPublico(),
   };
 })();
 

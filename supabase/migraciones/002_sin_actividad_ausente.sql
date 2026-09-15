@@ -1,0 +1,15 @@
+-- =========================================================================
+-- 002_sin_actividad_ausente.sql
+--
+-- Un registro normal no manda "sinActividad". En 001 la comparacion con
+-- 'true' daba NULL en vez de false, y la columna NOT NULL rechazaba el
+-- guardado: fallaba cualquier reporte que no fuera un dia sin actividad.
+-- Lo encontraron las pruebas antes de conectar la pagina.
+--
+-- 001_esquema.sql ya trae la version corregida para instalaciones nuevas;
+-- esta migracion es la que se aplico sobre la base existente.
+-- =========================================================================
+
+-- Unico cambio respecto de 001:
+--   v_sin boolean := coalesce((p_registro -> 'sinActividad') = 'true'::jsonb, false);
+-- El cuerpo completo de public.guardar_registro esta en 001_esquema.sql.

@@ -139,6 +139,7 @@ function despachar(accion, p) {
     case 'listarMetas':      return listarMetas(p);
     case 'guardarMetas':     return guardarMetas(p.metas);
     case 'listarContests':   return listarContests();
+    case 'cargaInicial':     return cargaInicial();
     case 'guardarContest':   return guardarContest(p.contest);
     case 'eliminarContest':  return eliminarContest(p.id);
     case 'validarAdmin':     return esPinValido(p.pinPrueba);
@@ -281,7 +282,7 @@ function cacheOlvidar(nombre) {
  * backend que version se cree, eso se ve en un segundo en vez de
  * depurarlo a ciegas.
  */
-var VERSION_BACKEND = 6;
+var VERSION_BACKEND = 7;
 
 /**
  * Que version esta desplegada y si el cache funciona de verdad.
@@ -920,6 +921,32 @@ function guardarMetas(lista) {
    El progreso no se guarda: se calcula en el navegador leyendo los
    registros diarios dentro del rango y el alcance del contest.
    ========================================================================= */
+
+/**
+ * Todo lo que la pagina lee, en una sola ejecucion.
+ *
+ * El costo de este backend no es leer la hoja —con el cache son ~100 ms—
+ * sino que Google arranque cada ejecucion. Medido en produccion el 14/09:
+ * la misma lectura tardo entre 0.7 y 45 s segun la cola, y 5 de 12
+ * terminaron en un 404 de Google tras esperar. Como el Web App corre como
+ * "Yo", TODOS los agentes comparten el mismo cupo de ejecuciones
+ * simultaneas de una sola cuenta: cada llamada de mas de un agente es cola
+ * para los demas.
+ *
+ * Abrir la pagina pedia agentes, registros y contests por separado, y el
+ * Resumen ademas las metas. Juntas son una ejecucion en lugar de cuatro.
+ * Se manda todo sin filtrar y la pagina recorta, igual que ya hacia con
+ * los registros.
+ */
+function cargaInicial() {
+  return {
+    version:   VERSION_BACKEND,
+    agentes:   listarAgentes(),
+    registros: listarRegistros({}),
+    metas:     listarMetas({}),
+    contests:  listarContests(),
+  };
+}
 
 function listarContests() {
   return leerTodoCacheado(HOJA_CONTESTS, COL_CONTESTS).map(function (c) {

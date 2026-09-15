@@ -2973,7 +2973,9 @@ async function prepararImagen(file) {
  */
 function explicarFalloSubida(err) {
   const msg = String(err && err.message ? err.message : err);
-  if (/404|<!DOCTYPE|no es valid/i.test(msg)) {
+  // Lo del permiso de Drive solo aplica al Apps Script. Con Supabase el
+  // mensaje del servidor ya es entendible y se muestra tal cual.
+  if (Store.modo === 'sheets' && /404|<!DOCTYPE|no es valid/i.test(msg)) {
     return 'el Apps Script aún no tiene permiso para usar Google Drive. ' +
            'En la hoja: menú Gladiators → "Probar acceso a Drive", acepta el ' +
            'permiso que pide Google, y vuelve a intentarlo.';
@@ -4380,23 +4382,82 @@ async function iniciar() {
       ? 'Modo de prueba — los datos se guardan solo en este navegador.'
       : 'Conectado a Google Sheets.';
 
+  Store.alActualizar(repintarConDatosNuevos);
+  Store.alCambiarEstado(pintarEstadoDatos);
+
   try {
-    // Agentes, registros y contests no dependen entre si: pedirlos a la vez
-    // cuesta la espera del mas lento en vez de la suma de los tres. Ademas
-    // esta lectura de registros deja servida la memoria del Store, asi que
-    // la primera pestaña que se abra ya no vuelve a preguntar.
-    const registros = Store.listarRegistros().catch(() => null);
-    const contests  = actualizarBadgeContests().catch(() => null);
+    // Un solo viaje trae todo lo que la pagina lee. Si este dispositivo ya
+    // tiene la copia de una visita anterior, sale de ahi al instante y la
+    // hoja se consulta por detras.
+    await Store.precargar();
 
     await cargarAgentes();
-    await registros;
     await pintarRecientes();
-    await contests;
+    await actualizarBadgeContests().catch(() => null);
 
     // Si la URL trae una ficha, se abre esa en vez de la pestaña por defecto
     aplicarHash();
   } catch (err) {
     aviso('No se pudieron cargar los datos: ' + err.message, 'error');
+  }
+}
+
+/**
+ * Llegaron datos mas nuevos que los que se estaban mostrando.
+ *
+ * Solo se repintan las vistas de consulta. Metas y Agentes tienen tablas que
+ * se editan en el sitio: repintarlas a media edicion borraria lo escrito, asi
+ * que esas toman los datos nuevos la proxima vez que se abren. Los
+ * selectores conservan lo elegido al rellenarse, asi que el formulario de
+ * registro no pierde nada.
+ */
+async function repintarConDatosNuevos() {
+  try {
+    await cargarAgentes();
+    await pintarRecientes();
+    await actualizarBadgeContests().catch(() => null);
+
+    const activo = $('.panel.is-activa');
+    const id = activo ? activo.id : '';
+    if (id === 'panel-resumen')  refrescarResumen();
+    if (id === 'panel-reportes') refrescarReportes();
+    if (id === 'panel-contests') refrescarContests();
+  } catch (err) {
+    // Lo que ya estaba pintado sigue siendo valido; no se interrumpe a nadie.
+    console.error('No se pudo repintar con los datos nuevos:', err);
+  }
+}
+
+/**
+ * La cabecera dice de cuando son los datos cuando no son de este momento.
+ *
+ * Mostrar la copia de la visita anterior al instante solo es honesto si se
+ * avisa: sin esto, un agente veria cifras de hace una hora creyendo que son
+ * las de ahora.
+ */
+function pintarEstadoDatos(e) {
+  const marca = $('#estadoDatos');
+  if (!marca) return;
+
+  const hora = e.t
+    ? new Date(e.t).toLocaleTimeString('es-GT', { hour: '2-digit', minute: '2-digit' })
+    : '';
+
+  marca.classList.remove('estado-datos--error');
+
+  if (e.hayDatos && e.error && !e.actualizando) {
+    marca.hidden = false;
+    marca.classList.add('estado-datos--error');
+    marca.textContent = `Sin actualizar · datos de las ${hora}`;
+    marca.title = `No se pudo consultar la hoja: ${e.error.message || e.error}. ` +
+                  'Se muestran los últimos datos que llegaron; se reintentará al cambiar de pestaña.';
+  } else if (e.hayDatos && e.actualizando && e.desdeCopia) {
+    marca.hidden = false;
+    marca.textContent = `Actualizando · datos de las ${hora}`;
+    marca.title = 'Se muestran los datos de tu visita anterior mientras llegan los de la hoja.';
+  } else {
+    marca.hidden = true;
+    marca.title = '';
   }
 }
 
