@@ -8,3 +8,9 @@ desktop.ini
 
 # Dependencias (por si más adelante se usan)
 node_modules/
+
+# Datos reales bajados de la hoja para importarlos: no se versionan
+supabase/herramientas/export/
+
+# Páginas de prueba temporales
+_prueba-*.html

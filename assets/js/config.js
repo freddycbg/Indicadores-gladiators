@@ -8,10 +8,23 @@ const CONFIG = {
      MODO DE DATOS
      'demo'   → datos de prueba guardados en el navegador (localStorage).
                 No necesita servidor. Úsalo para revisar y aprobar el diseño.
-     'sheets' → datos reales en Google Sheets vía Google Apps Script.
-                Pega abajo la URL del Web App y cambia MODO a 'sheets'.
+     'sheets'   → Google Sheets vía Google Apps Script (el sistema anterior).
+     'supabase' → base de datos en Supabase. Mismas reglas, validadas en el
+                  servidor, y respuestas en milisegundos en vez de segundos.
+                  Ver supabase/migraciones.
      ----------------------------------------------------------------------- */
-  MODO: 'sheets',
+  MODO: 'supabase',
+
+  /* -----------------------------------------------------------------------
+     SUPABASE
+     La clave es la PUBLICABLE: esta hecha para viajar dentro de la pagina.
+     Con ella solo se pueden ejecutar las funciones de la API, y cada una
+     valida su permiso en el servidor; las tablas no se pueden leer ni
+     escribir directamente. NUNCA poner aqui la clave "secret" ni la
+     "service_role".
+     ----------------------------------------------------------------------- */
+  SUPABASE_URL:   'https://xbcgwqyjwcwzfxujbxjk.supabase.co',
+  SUPABASE_CLAVE: 'sb_publishable_ts8ueXg23IUL5aEYrkvMIA_zP5OLXqp',
 
   /* -----------------------------------------------------------------------
      MODO AL ABRIR DESDE LOCALHOST
@@ -22,8 +35,8 @@ const CONFIG = {
      ----------------------------------------------------------------------- */
   MODO_LOCALHOST: 'demo',
 
-  // URL del Web App de Google Apps Script (termina en /exec)
-  // Ejemplo: https://script.google.com/macros/s/AKfycb.../exec
+  // URL del Web App de Google Apps Script (termina en /exec). Se conserva
+  // para poder volver al sistema anterior cambiando MODO a 'sheets'.
   SHEETS_URL: 'https://script.google.com/macros/s/AKfycbyGxRYz0zPpC1jU_swbRWTUtxO_SJnAwEEWPQWTYCIuN6Z3fu-4rG27Y9UTrZqTw0Hu/exec',
 
   // PIN de administrador para la pestaña "Agentes" (solo modo demo).

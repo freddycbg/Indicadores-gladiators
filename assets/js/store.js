@@ -675,10 +675,74 @@ const Store = (() => {
   };
 
   /* =======================================================================
-     BACKEND SHEETS — Google Apps Script
-     Se usa POST con Content-Type text/plain para evitar el preflight CORS
-     que Apps Script no responde.
+     BACKEND REMOTO — Supabase o Google Apps Script
+
+     Los dos responden con el mismo sobre, {ok, data} o {ok, error}, asi que
+     todo lo de abajo —paquete unico, copia local, reintentos— es comun. Lo
+     unico que cambia es como viaja cada peticion.
      ======================================================================= */
+
+  function urlDelBackend() {
+    return MODO_EFECTIVO === 'supabase' ? CONFIG.SUPABASE_URL : CONFIG.SHEETS_URL;
+  }
+
+  /* Apps Script: POST con Content-Type text/plain, para evitar el preflight
+     CORS que Apps Script no responde. */
+  async function peticionAppsScript(accion, datos, signal) {
+    const res = await fetch(CONFIG.SHEETS_URL, {
+      method: 'POST',
+      headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+      body: JSON.stringify({ accion, ...datos, pin: Sesion.pin() }),
+      signal,
+    });
+    if (!res.ok) throw new Error(`Google no respondió (${res.status})`);
+    return res;
+  }
+
+  /* Supabase: cada accion de la pagina es una funcion de la base, definida
+     en supabase/migraciones. Aqui solo se traduce el nombre y los
+     parametros. El PIN viaja siempre y lo valida la base, nunca la pagina. */
+  const RPC_SUPABASE = {
+    cargaInicial:     ()  => ['carga_inicial',     {}],
+    diagnostico:      ()  => ['diagnostico',       {}],
+    validarAdmin:     (d) => ['validar_admin',     { p_pin: d.pinPrueba }],
+    guardarRegistro:  (d) => ['guardar_registro',  { p_registro: d.registro, p_pin: Sesion.pin() }],
+    eliminarRegistro: (d) => ['eliminar_registro', { p_id: d.id, p_pin: Sesion.pin() }],
+    crearAgente:      (d) => ['crear_agente',      { p_agente: d.agente, p_pin: Sesion.pin() }],
+    actualizarAgente: (d) => ['actualizar_agente', { p_id: d.id, p_cambios: d.cambios, p_pin: Sesion.pin() }],
+    eliminarAgente:   (d) => ['eliminar_agente',   { p_id: d.id, p_borrar_registros: d.borrarRegistros === true,
+                                                     p_pin: Sesion.pin() }],
+    guardarMetas:     (d) => ['guardar_metas',     { p_metas: d.metas, p_pin: Sesion.pin() }],
+    guardarContest:   (d) => ['guardar_contest',   { p_contest: d.contest, p_pin: Sesion.pin() }],
+    eliminarContest:  (d) => ['eliminar_contest',  { p_id: d.id, p_pin: Sesion.pin() }],
+  };
+
+  async function peticionSupabase(accion, datos, signal) {
+    const traducir = RPC_SUPABASE[accion];
+    if (!traducir) {
+      const err = new Error(`Acción desconocida: ${accion}`);
+      err.delServidor = true;
+      throw err;
+    }
+    const [funcion, parametros] = traducir(datos);
+
+    const res = await fetch(`${CONFIG.SUPABASE_URL}/rest/v1/rpc/${funcion}`, {
+      method: 'POST',
+      headers: { apikey: CONFIG.SUPABASE_CLAVE, 'Content-Type': 'application/json' },
+      body: JSON.stringify(parametros),
+      signal,
+    });
+    if (res.ok) return res;
+
+    // Un 4xx es una peticion mal formada (funcion o parametro que no existe):
+    // repetirla da lo mismo. Salvo 408 y 429, que si son pasajeros.
+    let detalle = '';
+    try { detalle = (await res.json()).message || ''; } catch { /* sin cuerpo */ }
+    const err = new Error(`La base de datos rechazó la petición (${res.status})` +
+                          (detalle ? `: ${detalle}` : ''));
+    err.delServidor = res.status >= 400 && res.status < 500 && ![408, 429].includes(res.status);
+    throw err;
+  }
 
   /**
    * Una llamada al Apps Script.
@@ -694,8 +758,8 @@ const Store = (() => {
    * reintenta: un PIN malo o una accion desconocida no mejoran repitiendo.
    */
   async function llamar(accion, datos = {}, { reintentos = 0, limiteMs = 0 } = {}) {
-    if (!CONFIG.SHEETS_URL) {
-      throw new Error('Falta configurar CONFIG.SHEETS_URL en assets/js/config.js');
+    if (!urlDelBackend()) {
+      throw new Error('Falta configurar la conexión de datos en assets/js/config.js');
     }
     for (let intento = 0; ; intento++) {
       try {
@@ -722,26 +786,24 @@ const Store = (() => {
   async function llamarUnaVez(accion, datos, limiteMs = 0) {
     const control = limiteMs ? new AbortController() : null;
     const reloj = control ? setTimeout(() => control.abort(), limiteMs) : null;
+    const signal = control ? control.signal : undefined;
+    const servicio = MODO_EFECTIVO === 'supabase' ? 'La base de datos' : 'Google';
 
     let json;
     try {
-      const res = await fetch(CONFIG.SHEETS_URL, {
-        method: 'POST',
-        headers: { 'Content-Type': 'text/plain;charset=utf-8' },
-        body: JSON.stringify({ accion, ...datos, pin: Sesion.pin() }),
-        signal: control ? control.signal : undefined,
-      });
-      if (!res.ok) throw new Error(`Google no respondió (${res.status})`);
+      const res = MODO_EFECTIVO === 'supabase'
+        ? await peticionSupabase(accion, datos, signal)
+        : await peticionAppsScript(accion, datos, signal);
 
       try {
         json = await res.json();
       } catch (e) {
         if (e.name === 'AbortError') throw e;
-        throw new Error('Google devolvió una página de error en lugar de los datos.');
+        throw new Error(`${servicio} devolvió una página de error en lugar de los datos.`);
       }
     } catch (e) {
       if (e.name === 'AbortError') {
-        throw new Error(`Google tardó más de ${Math.round(limiteMs / 1000)} s en responder.`);
+        throw new Error(`${servicio} tardó más de ${Math.round(limiteMs / 1000)} s en responder.`);
       }
       throw e;
     } finally {
@@ -824,7 +886,7 @@ const Store = (() => {
     try {
       const c = JSON.parse(localStorage.getItem(CLAVE_COPIA) || 'null');
       // La copia es de UNA hoja: si la URL cambio, no le pertenece.
-      if (!c || c.url !== CONFIG.SHEETS_URL || !Array.isArray(c.registros)) return null;
+      if (!c || c.url !== urlDelBackend() || !Array.isArray(c.registros)) return null;
       return c;
     } catch {
       return null;
@@ -833,7 +895,7 @@ const Store = (() => {
 
   function guardarCopia(p) {
     try {
-      localStorage.setItem(CLAVE_COPIA, JSON.stringify({ ...p, url: CONFIG.SHEETS_URL }));
+      localStorage.setItem(CLAVE_COPIA, JSON.stringify({ ...p, url: urlDelBackend() }));
     } catch {
       // Sin espacio o almacenamiento bloqueado (ventana privada): se sigue
       // funcionando, solo que cada visita espera a la hoja como antes.
@@ -1051,7 +1113,10 @@ const Store = (() => {
 
   if (MODO_EFECTIVO === 'demo') sembrarDemo();
 
-  const backend = MODO_EFECTIVO === 'sheets' ? sheets : demo;
+  // Supabase y Apps Script comparten todas las lecturas y escrituras de abajo:
+  // solo difiere el transporte, que decide llamarUnaVez.
+  const remoto = MODO_EFECTIVO === 'sheets' || MODO_EFECTIVO === 'supabase';
+  const backend = remoto ? sheets : demo;
 
   /**
    * URL con la que mostrar una imagen guardada.
@@ -1070,7 +1135,6 @@ const Store = (() => {
     return `https://drive.google.com/thumbnail?id=${encodeURIComponent(fileId)}&sz=w${ancho}`;
   }
 
-  const enHoja = MODO_EFECTIVO === 'sheets';
 
   return {
     ...backend,
@@ -1084,12 +1148,12 @@ const Store = (() => {
     urlMultimedia,
 
     /** Deja el paquete listo: al instante si hay copia, si no espera a la hoja. */
-    precargar: () => (enHoja ? obtenerPaquete() : Promise.resolve()),
+    precargar: () => (remoto ? obtenerPaquete() : Promise.resolve()),
 
     /** Llegaron datos distintos de los que se estaban mostrando. */
-    alActualizar:   fn => { if (enHoja) oyentesDatos.add(fn); },
+    alActualizar:   fn => { if (remoto) oyentesDatos.add(fn); },
     /** Empezo o termino una actualizacion, o fallo. */
-    alCambiarEstado: fn => { if (enHoja) oyentesEstado.add(fn); },
+    alCambiarEstado: fn => { if (remoto) oyentesEstado.add(fn); },
     estadoDatos:    () => estadoPublico(),
   };
 })();
