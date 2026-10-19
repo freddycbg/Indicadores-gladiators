@@ -2,12 +2,12 @@ import { createServerClient } from '@supabase/ssr'
 import { NextResponse, type NextRequest } from 'next/server'
 
 /**
- * Refresca la sesión en cada petición y manda a la entrada a quien no la
+* Refresca la sesión en cada petición y manda a la entrada a quien no la
  * tenga. Es comodidad de navegación, no seguridad: la seguridad son las
  * políticas RLS. Si este archivo desapareciera, nadie vería un dato ajeno;
  * solo vería pantallas vacías en vez de la pantalla de entrada.
  */
-export async function middleware(req: NextRequest) {
+export async function proxy(req: NextRequest) {
   let res = NextResponse.next({ request: req })
 
   const sb = createServerClient(

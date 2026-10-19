@@ -54,11 +54,25 @@ Copia `.env.example` a `.env.local` y llénalo. Tres reglas:
 
 ```bash
 npm install
-npm run typecheck     # TypeScript estricto, sin excepciones
+npm run verificar     # tipos + build + comprobación de que Tailwind corrió
 npm run dev
 ```
 
-### 4. Antes de dar la fase por buena
+**El build usa webpack a propósito, no Turbopack.** Con Turbopack el build
+pasa —sin errores, con todas las rutas listadas— pero el plugin de PostCSS
+de Tailwind no se ejecuta y el CSS sale **sin una sola utilidad**: la
+aplicación arranca y se ve como un documento sin estilos. Por eso
+`npm run verificar` termina comprobando el CSS compilado: un build verde no
+prueba nada si no se mira lo que produjo.
+
+### 4. Versiones
+
+`next` y `@supabase/*` están fijadas a versiones **sin vulnerabilidades
+conocidas** (`npm audit --omit=dev` da cero). Las primeras que elegí sí
+tenían: Next 15.1.6 arrastraba CVE-2025-66478 y `auth-js` un fallo de
+ruteo. Si actualizas, vuelve a correr la auditoría.
+
+### 5. Antes de dar la fase por buena
 
 ```bash
 npm run test:permisos
