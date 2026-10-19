@@ -1,0 +1,138 @@
+@import 'tailwindcss';
+
+/* ══════════════════════════════════════════════════════════════════════
+   GLADIATORS OS — el sistema, en un solo sitio.
+
+   La escala salió de una revisión que encontró 27 tamaños de letra, 10
+   radios y 15 alturas de control donde debía haber nueve, cuatro y tres.
+   Lo que no esté aquí es un caso único, y un caso único es un error de
+   revisión, no una preferencia.
+   ══════════════════════════════════════════════════════════════════════ */
+@theme {
+  /* — superficies — */
+  --color-negro:    #080B0F;   /* el fondo de la página */
+  --color-azulado:  #0E141B;   /* barras: lateral y superior */
+  --color-grafito:  #171E27;   /* tarjetas */
+  --color-elevada:  #202A35;   /* lo que sube un plano */
+
+  /* — el oro. Hace cuatro trabajos y ninguno más: marca, progreso,
+       acción principal y rótulo de sección. Un quinto uso lo abarata. — */
+  --color-oro:      #D8B46A;
+  --color-oro-cl:   #F0D59A;
+  --color-oro-os:   #8E7338;
+
+  /* — tinta. El gris-2 está en #828C99 y no más abajo: con #79838F daba
+       4.36:1 sobre grafito, por debajo del mínimo legible, en unos 120
+       nodos de texto. — */
+  --color-blanco:   #F5F2EA;
+  --color-gris:     #A9B2BD;
+  --color-gris-2:   #828C99;
+
+  /* — estado — */
+  --color-exito:    #4BC58A;
+  --color-alerta:   #E36B68;
+  --color-info:     #69A9F5;
+
+  /* — filos — */
+  --color-filo:      rgba(169, 178, 189, 0.14);
+  --color-filo-oro:  rgba(216, 180, 106, 0.30);
+  --color-filo-ok:   rgba(75, 197, 138, 0.30);
+  --color-filo-mal:  rgba(227, 107, 104, 0.30);
+  --color-filo-info: rgba(105, 169, 245, 0.28);
+
+  /* — tipografía. Playfair solo en marca y títulos de sección. — */
+  --font-serif: 'Playfair Display', Georgia, serif;
+  --font-sans:  'Manrope', system-ui, -apple-system, sans-serif;
+
+  /* nueve tamaños, ninguno por debajo de 11 */
+  --text-t1: 11px;  --text-t2: 12px;  --text-t3: 13px;
+  --text-t4: 14px;  --text-t5: 16px;  --text-t6: 20px;
+  --text-t7: 24px;  --text-t8: 30px;  --text-t9: 40px;
+
+  /* ocho espacios, base 4 */
+  --spacing-e1: 4px;  --spacing-e2: 8px;  --spacing-e3: 12px; --spacing-e4: 16px;
+  --spacing-e5: 20px; --spacing-e6: 24px; --spacing-e7: 32px; --spacing-e8: 40px;
+
+  /* cuatro radios, por oficio */
+  --radius-chip:    6px;    /* pastillas, casillas */
+  --radius-control: 8px;    /* botones, campos */
+  --radius-surface: 12px;   /* tarjetas */
+
+  /* tres alturas de control */
+  --height-sm: 32px;  --height-md: 40px;  --height-lg: 48px;
+}
+
+/* ── base ────────────────────────────────────────────────────────────── */
+@layer base {
+  html { color-scheme: dark; }
+
+  body {
+    background: var(--color-negro);
+    color: var(--color-gris);
+    font-family: var(--font-sans);
+    font-size: var(--text-t4);
+    line-height: 1.5;
+    -webkit-font-smoothing: antialiased;
+  }
+
+  /* El foco es AZUL, nunca oro. Dos razones: un anillo dorado sobre un
+     botón dorado solo se distingue por el hueco, y el oro marca énfasis
+     permanente (el campo de ALP lo lleva siempre) — si también marcara
+     foco, no se podría distinguir el campo enfocado del importante.
+
+     Y sin `border-radius: inherit`: border-radius no es heredable, así que
+     `inherit` toma el del PADRE y el elemento cambia de forma al enfocarse.
+     El contorno ya sigue el radio propio por sí solo. */
+  :focus-visible {
+    outline: 2px solid var(--color-info);
+    outline-offset: 2px;
+  }
+
+  /* Un control deshabilitado tiene que leerse como hundido y vacío, no
+     como relleno y listo. La opacidad que pone el navegador no es un
+     estado diseñado. */
+  [disabled] {
+    opacity: 1;
+    color: var(--color-gris-2);
+    background: var(--color-negro);
+    border-color: rgba(169, 178, 189, 0.07);
+    cursor: not-allowed;
+    box-shadow: inset 0 1px 3px rgb(0 0 0 / 0.4);
+  }
+
+  ::selection { background: rgb(216 180 106 / 0.28); color: var(--color-blanco); }
+  * { scrollbar-color: var(--color-elevada) transparent; scrollbar-width: thin; }
+
+  /* Dibujamos lo que dibujaría el navegador: una casilla nativa sale
+     blanca con borde negro, el objeto de más contraste de la pantalla. */
+  input[type='checkbox'] {
+    appearance: none;
+    width: 18px; height: 18px; flex: none;
+    border: 1.5px solid var(--color-gris-2);
+    border-radius: var(--spacing-e1);
+    background: transparent;
+    cursor: pointer;
+    transition: background 0.15s ease, border-color 0.15s ease;
+  }
+  input[type='checkbox']:hover:not(:disabled) { border-color: var(--color-oro); }
+  input[type='checkbox']:checked {
+    background: var(--color-oro) no-repeat center / 11px 11px;
+    border-color: var(--color-oro);
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 12 12' fill='none' stroke='%23120E06' stroke-width='2.2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M2 6.3 4.8 9 10 3.2'/%3E%3C/svg%3E");
+  }
+
+  select {
+    appearance: none;
+    cursor: pointer;
+    padding-right: var(--spacing-e7);
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 12 7' fill='none' stroke='%23828C99' stroke-width='1.7' stroke-linecap='round'%3E%3Cpath d='M1 1.5 6 6l5-4.5'/%3E%3C/svg%3E");
+    background-repeat: no-repeat;
+    background-position: right 13px center;
+    background-size: 11px 7px;
+  }
+  /* El chevron se queda al deshabilitar, apagado: un select sin chevron
+     parece un campo de texto vacío e invita a escribir en él. */
+  select:disabled {
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 12 7' fill='none' stroke='%233D4654' stroke-width='1.7' stroke-linecap='round'%3E%3Cpath d='M1 1.5 6 6l5-4.5'/%3E%3C/svg%3E");
+  }
+}
